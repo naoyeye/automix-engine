@@ -1,25 +1,23 @@
 /**
  * AutoMix CLI - Player
  * 
- * Plays a playlist with automatic transitions.
- * Uses PortAudio for audio output (if available).
+ * Plays a playlist with automatic transitions using the built-in
+ * AudioOutput (CoreAudio on macOS). The main loop calls automix_poll()
+ * to drive track pre-loading, transition triggers, and status callbacks.
  * 
  * Usage: automix-play [options] --seed <track_id>
  */
 
 #include "automix/automix.h"
 #include <iostream>
+#include <iomanip>
 #include <string>
 #include <cstring>
+#include <cstdlib>
 #include <thread>
 #include <chrono>
 #include <atomic>
 #include <csignal>
-
-// Simple audio output using Core Audio on macOS
-#ifdef __APPLE__
-#include <AudioToolbox/AudioToolbox.h>
-#endif
 
 static std::atomic<bool> g_running{true};
 
@@ -39,16 +37,16 @@ void status_callback(
     
     const char* state_str = "Unknown";
     switch (state) {
-        case AUTOMIX_STATE_STOPPED: state_str = "Stopped"; break;
-        case AUTOMIX_STATE_PLAYING: state_str = "Playing"; break;
-        case AUTOMIX_STATE_PAUSED: state_str = "Paused"; break;
-        case AUTOMIX_STATE_TRANSITIONING: state_str = "Transitioning"; break;
+        case AUTOMIX_STATE_STOPPED:       state_str = "Stopped"; break;
+        case AUTOMIX_STATE_PLAYING:       state_str = "Playing"; break;
+        case AUTOMIX_STATE_PAUSED:        state_str = "Paused"; break;
+        case AUTOMIX_STATE_TRANSITIONING: state_str = "Mixing "; break;
     }
     
-    std::cout << "\r[" << state_str << "] Track " << current_track_id 
-              << " @ " << position << "s";
+    std::cout << "\r  [" << state_str << "] Track " << current_track_id
+              << "  " << std::fixed << std::setprecision(1) << position << "s";
     if (next_track_id > 0) {
-        std::cout << " -> Next: " << next_track_id;
+        std::cout << "  -> Next: " << next_track_id;
     }
     std::cout << "          " << std::flush;
 }
@@ -59,93 +57,17 @@ void print_usage(const char* program) {
               << "  -d, --database <path>  Database file path (default: automix.db)\n"
               << "  -s, --seed <id>        Seed track ID (required)\n"
               << "  -c, --count <n>        Number of tracks (default: 10)\n"
+              << "  -e, --eq-swap          Use EQ swap transitions\n"
+              << "  -b, --beats <n>        Crossfade beats (default: 16)\n"
               << "  -h, --help             Show this help\n";
 }
-
-#ifdef __APPLE__
-// Core Audio render callback
-static OSStatus audio_callback(
-    void* inRefCon,
-    AudioUnitRenderActionFlags* ioActionFlags,
-    const AudioTimeStamp* inTimeStamp,
-    UInt32 inBusNumber,
-    UInt32 inNumberFrames,
-    AudioBufferList* ioData
-) {
-    (void)ioActionFlags;
-    (void)inTimeStamp;
-    (void)inBusNumber;
-    
-    AutoMixEngine* engine = static_cast<AutoMixEngine*>(inRefCon);
-    
-    for (UInt32 i = 0; i < ioData->mNumberBuffers; ++i) {
-        float* buffer = static_cast<float*>(ioData->mBuffers[i].mData);
-        int frames = ioData->mBuffers[i].mDataByteSize / (sizeof(float) * 2);
-        
-        automix_render(engine, buffer, frames);
-    }
-    
-    return noErr;
-}
-
-bool setup_audio_output(AutoMixEngine* engine, AudioComponentInstance* audioUnit) {
-    AudioComponentDescription desc = {};
-    desc.componentType = kAudioUnitType_Output;
-    desc.componentSubType = kAudioUnitSubType_DefaultOutput;
-    desc.componentManufacturer = kAudioUnitManufacturer_Apple;
-    
-    AudioComponent component = AudioComponentFindNext(nullptr, &desc);
-    if (!component) {
-        std::cerr << "Error: Could not find audio output component\n";
-        return false;
-    }
-    
-    if (AudioComponentInstanceNew(component, audioUnit) != noErr) {
-        std::cerr << "Error: Could not create audio unit\n";
-        return false;
-    }
-    
-    // Set format
-    AudioStreamBasicDescription format = {};
-    format.mSampleRate = automix_get_sample_rate(engine);
-    format.mFormatID = kAudioFormatLinearPCM;
-    format.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
-    format.mBitsPerChannel = 32;
-    format.mChannelsPerFrame = 2;
-    format.mFramesPerPacket = 1;
-    format.mBytesPerFrame = format.mBitsPerChannel / 8 * format.mChannelsPerFrame;
-    format.mBytesPerPacket = format.mBytesPerFrame * format.mFramesPerPacket;
-    
-    if (AudioUnitSetProperty(*audioUnit, kAudioUnitProperty_StreamFormat,
-        kAudioUnitScope_Input, 0, &format, sizeof(format)) != noErr) {
-        std::cerr << "Error: Could not set audio format\n";
-        return false;
-    }
-    
-    // Set callback
-    AURenderCallbackStruct callback = {};
-    callback.inputProc = audio_callback;
-    callback.inputProcRefCon = engine;
-    
-    if (AudioUnitSetProperty(*audioUnit, kAudioUnitProperty_SetRenderCallback,
-        kAudioUnitScope_Input, 0, &callback, sizeof(callback)) != noErr) {
-        std::cerr << "Error: Could not set audio callback\n";
-        return false;
-    }
-    
-    if (AudioUnitInitialize(*audioUnit) != noErr) {
-        std::cerr << "Error: Could not initialize audio unit\n";
-        return false;
-    }
-    
-    return true;
-}
-#endif
 
 int main(int argc, char* argv[]) {
     std::string db_path = "automix.db";
     int64_t seed_id = -1;
     int count = 10;
+    bool eq_swap = false;
+    float crossfade_beats = 16.0f;
     
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -153,17 +75,15 @@ int main(int argc, char* argv[]) {
             print_usage(argv[0]);
             return 0;
         } else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--database") == 0) {
-            if (i + 1 < argc) {
-                db_path = argv[++i];
-            }
+            if (i + 1 < argc) db_path = argv[++i];
         } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--seed") == 0) {
-            if (i + 1 < argc) {
-                seed_id = std::stoll(argv[++i]);
-            }
+            if (i + 1 < argc) seed_id = std::stoll(argv[++i]);
         } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--count") == 0) {
-            if (i + 1 < argc) {
-                count = std::atoi(argv[++i]);
-            }
+            if (i + 1 < argc) count = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--eq-swap") == 0) {
+            eq_swap = true;
+        } else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--beats") == 0) {
+            if (i + 1 < argc) crossfade_beats = std::atof(argv[++i]);
         }
     }
     
@@ -188,13 +108,13 @@ int main(int argc, char* argv[]) {
     
     // Set transition config
     AutoMixTransitionConfig config = {};
-    config.crossfade_beats = 16.0f;
-    config.use_eq_swap = 0;
+    config.crossfade_beats = crossfade_beats;
+    config.use_eq_swap = eq_swap ? 1 : 0;
     config.stretch_limit = 0.06f;
     automix_set_transition_config(engine, &config);
     
     // Generate playlist
-    std::cout << "Generating playlist...\n";
+    std::cout << "Generating playlist from seed track " << seed_id << "...\n";
     
     AutoMixPlaylistRules rules = {};
     rules.bpm_tolerance = 0.1f;
@@ -208,42 +128,54 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    std::cout << "Playlist generated. Starting playback...\n";
+    // Print playlist
+    int64_t* track_ids = nullptr;
+    int track_count = 0;
+    if (automix_playlist_get_tracks(playlist, &track_ids, &track_count) == AUTOMIX_OK) {
+        std::cout << "\nPlaylist (" << track_count << " tracks):\n";
+        for (int i = 0; i < track_count; ++i) {
+            AutoMixTrackInfo info;
+            if (automix_get_track_info(engine, track_ids[i], &info) == AUTOMIX_OK) {
+                std::cout << "  " << (i + 1) << ". [" << info.id << "] " << info.path
+                          << "  (BPM:" << info.bpm << " Key:" << info.key << ")\n";
+                free((void*)info.path);
+                free((void*)info.key);
+            }
+        }
+        delete[] track_ids;
+    }
+    
+    std::cout << "\nStarting playback" << (eq_swap ? " (EQ Swap)" : "") << "...\n";
     std::cout << "Press Ctrl+C to stop.\n\n";
     
-#ifdef __APPLE__
-    // Setup audio output
-    AudioComponentInstance audioUnit = nullptr;
-    if (!setup_audio_output(engine, &audioUnit)) {
-        automix_playlist_free(playlist);
-        automix_destroy(engine);
-        return 1;
-    }
-    
-    // Start playback
+    // Start playback — this loads the playlist into the scheduler
     if (automix_play(engine, playlist) != AUTOMIX_OK) {
         std::cerr << "Error: " << automix_get_error(engine) << "\n";
-        AudioComponentInstanceDispose(audioUnit);
         automix_playlist_free(playlist);
         automix_destroy(engine);
         return 1;
     }
     
-    // Start audio
-    AudioOutputUnitStart(audioUnit);
+    // Start platform audio output (CoreAudio on macOS)
+    if (automix_start_audio(engine) != AUTOMIX_OK) {
+        std::cerr << "Warning: Could not start audio output.\n"
+                  << "Use automix_render() to pull audio manually.\n";
+    }
     
-    // Wait for stop signal
+    // =========================================================================
+    // Main loop: poll() drives the non-real-time scheduler work
+    //   - pre-loads upcoming tracks
+    //   - completes deck swaps after transitions
+    //   - fires status callbacks
+    // =========================================================================
     while (g_running && automix_get_state(engine) != AUTOMIX_STATE_STOPPED) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        automix_poll(engine);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     
     // Cleanup
-    AudioOutputUnitStop(audioUnit);
-    AudioComponentInstanceDispose(audioUnit);
-#else
-    std::cerr << "Audio output not supported on this platform.\n";
-    std::cerr << "Use automix_render() to get audio samples.\n";
-#endif
+    automix_stop(engine);
+    automix_stop_audio(engine);
     
     std::cout << "\nStopped.\n";
     
