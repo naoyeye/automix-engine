@@ -9,6 +9,8 @@
 #include "similarity.h"
 #include "transition_points.h"
 #include <vector>
+#include <random>
+#include <deque>
 
 namespace automix {
 
@@ -52,14 +54,40 @@ public:
 private:
     SimilarityCalculator similarity_;
     TransitionPointFinder transition_finder_;
+    std::mt19937 rng_;
     
     /**
-     * Select next track based on similarity and rules.
+     * Select next track using comprehensive scoring.
+     * @param current Current track
+     * @param available Available tracks to choose from
+     * @param rules Playlist generation rules
+     * @param progress Current playlist progress (0.0 - 1.0)
+     * @param recent_tracks Recently added tracks (for variety scoring)
+     * @param target_count Total number of tracks to generate
      */
     std::optional<TrackInfo> select_next(
         const TrackInfo& current,
         const std::vector<TrackInfo>& available,
-        const PlaylistRules& rules
+        const PlaylistRules& rules,
+        float progress,
+        const std::deque<TrackInfo>& recent_tracks,
+        int target_count
+    );
+    
+    // Calculate target energy for a given progress based on EnergyArc
+    float target_energy_for_progress(EnergyArc arc, float progress);
+    
+    // Calculate average energy of a track from its energy curve
+    float track_average_energy(const TrackInfo& track);
+    
+    // Score a candidate track (higher = better)
+    float score_candidate(
+        const TrackInfo& current,
+        const TrackInfo& candidate,
+        const PlaylistRules& rules,
+        float progress,
+        const std::deque<TrackInfo>& recent_tracks,
+        int target_count
     );
 };
 

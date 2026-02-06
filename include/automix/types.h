@@ -117,6 +117,14 @@ struct TransitionPoint {
     float energy = 0.0f;
 };
 
+struct EQTransitionHint {
+    bool use_eq_swap = false;
+    float low_cut_start = 0.0f;         // When to start cutting low freq (0-1 of transition progress)
+    float low_cut_end = 0.5f;           // When low freq is fully cut
+    float low_restore_start = 0.5f;     // When to start restoring low freq on incoming track
+    float low_restore_end = 1.0f;       // When low freq is fully restored
+};
+
 struct TransitionPlan {
     int64_t from_track_id = 0;
     int64_t to_track_id = 0;
@@ -125,6 +133,7 @@ struct TransitionPlan {
     float bpm_stretch_ratio = 1.0f;     // 1.0 = no stretch
     int pitch_shift_semitones = 0;      // 0 = no shift
     float crossfade_duration = 0.0f;    // Seconds
+    EQTransitionHint eq_hint;           // EQ transition metadata
 };
 
 /* ============================================================================
@@ -152,23 +161,42 @@ struct SimilarityWeights {
     float key = 1.0f;
     float mfcc = 0.5f;
     float energy = 0.3f;
+    float chroma = 0.4f;
+    float duration = 0.2f;
     
     static SimilarityWeights defaults() {
-        return SimilarityWeights{1.0f, 1.0f, 0.5f, 0.3f};
+        SimilarityWeights w;
+        w.bpm = 1.0f; w.key = 1.0f; w.mfcc = 0.5f;
+        w.energy = 0.3f; w.chroma = 0.4f; w.duration = 0.2f;
+        return w;
     }
     
     static SimilarityWeights for_electronic() {
-        return SimilarityWeights{1.5f, 1.2f, 0.3f, 0.5f};
+        SimilarityWeights w;
+        w.bpm = 1.5f; w.key = 1.2f; w.mfcc = 0.3f;
+        w.energy = 0.5f; w.chroma = 0.3f; w.duration = 0.1f;
+        return w;
     }
     
     static SimilarityWeights for_ambient() {
-        return SimilarityWeights{0.3f, 0.8f, 0.8f, 1.0f};
+        SimilarityWeights w;
+        w.bpm = 0.3f; w.key = 0.8f; w.mfcc = 0.8f;
+        w.energy = 1.0f; w.chroma = 0.6f; w.duration = 0.3f;
+        return w;
     }
 };
 
 /* ============================================================================
  * Playlist Generation Rules
  * ============================================================================ */
+
+enum class EnergyArc {
+    None,           // No energy control
+    Ascending,      // Gradually increase energy
+    Peak,           // Low -> High -> Low (party mode)
+    Descending,     // Gradually decrease energy (closing set)
+    Wave            // Oscillating energy (wave pattern)
+};
 
 struct PlaylistRules {
     float bpm_tolerance = 0.0f;         // 0 = any BPM difference allowed
@@ -178,6 +206,16 @@ struct PlaylistRules {
     std::vector<std::string> style_filter;
     bool allow_cross_style = true;
     SimilarityWeights weights;
+    
+    // Energy arc control
+    EnergyArc energy_arc = EnergyArc::None;
+    
+    // BPM progression
+    float bpm_step_limit = 0.0f;        // 0 = no limit on BPM jump between tracks
+    bool prefer_bpm_progression = false; // Prefer gradual BPM changes
+    
+    // Random seed (0 = non-deterministic)
+    uint32_t random_seed = 0;
 };
 
 /* ============================================================================

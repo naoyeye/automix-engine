@@ -40,6 +40,18 @@ float SimilarityCalculator::distance(const TrackInfo& a, const TrackInfo& b) con
         total_weight += weights_.energy;
     }
     
+    // Chroma distance
+    if (weights_.chroma > 0 && !a.chroma.empty() && !b.chroma.empty()) {
+        d += weights_.chroma * chroma_distance(a.chroma, b.chroma);
+        total_weight += weights_.chroma;
+    }
+    
+    // Duration distance
+    if (weights_.duration > 0 && a.duration > 0 && b.duration > 0) {
+        d += weights_.duration * duration_distance(a.duration, b.duration);
+        total_weight += weights_.duration;
+    }
+    
     // Normalize by total weight
     return total_weight > 0 ? d / total_weight : 0.0f;
 }
@@ -126,21 +138,18 @@ float SimilarityCalculator::mfcc_distance(const std::vector<float>& mfcc1, const
 }
 
 float SimilarityCalculator::energy_distance(const std::vector<float>& energy1, const std::vector<float>& energy2) const {
-    // Compare energy curve shapes
-    // Use DTW-like approach but simplified
-    
     if (energy1.empty() || energy2.empty()) {
         return 0.0f;
     }
     
     // Resample to same length
-    size_t target_len = std::min(energy1.size(), energy2.size());
-    target_len = std::min(target_len, size_t(100));  // Limit for performance
+    const size_t target_len = 100;
     
-    auto resample = [target_len](const std::vector<float>& curve) {
-        std::vector<float> resampled(target_len);
-        for (size_t i = 0; i < target_len; ++i) {
-            float src_idx = static_cast<float>(i) * (curve.size() - 1) / (target_len - 1);
+    auto resample = [](const std::vector<float>& curve, size_t len) {
+        if (curve.size() <= 1) return std::vector<float>(len, curve.empty() ? 0.0f : curve[0]);
+        std::vector<float> resampled(len);
+        for (size_t i = 0; i < len; ++i) {
+            float src_idx = static_cast<float>(i) * (curve.size() - 1) / (len - 1);
             size_t idx0 = static_cast<size_t>(src_idx);
             size_t idx1 = std::min(idx0 + 1, curve.size() - 1);
             float frac = src_idx - idx0;
@@ -149,10 +158,10 @@ float SimilarityCalculator::energy_distance(const std::vector<float>& energy1, c
         return resampled;
     };
     
-    auto e1 = resample(energy1);
-    auto e2 = resample(energy2);
+    auto e1 = resample(energy1, target_len);
+    auto e2 = resample(energy2, target_len);
     
-    // Compute correlation
+    // 1) Global correlation (original approach)
     float mean1 = 0, mean2 = 0;
     for (size_t i = 0; i < target_len; ++i) {
         mean1 += e1[i];
@@ -171,13 +180,76 @@ float SimilarityCalculator::energy_distance(const std::vector<float>& energy1, c
     }
     
     float denominator = std::sqrt(var1 * var2);
-    if (denominator < 1e-10f) {
+    float correlation = (denominator > 1e-10f) ? (numerator / denominator) : 0.0f;
+    float global_distance = (1.0f - correlation) / 2.0f;
+    
+    // 2) Segmented comparison (5 segments: intro/buildup/peak/breakdown/outro)
+    float seg_distance = segment_energy_distance(e1, e2, 5);
+    
+    // Blend: 60% global correlation + 40% segmented
+    return 0.6f * global_distance + 0.4f * seg_distance;
+}
+
+float SimilarityCalculator::segment_energy_distance(
+    const std::vector<float>& e1, const std::vector<float>& e2, size_t segments
+) const {
+    if (e1.size() != e2.size() || e1.empty() || segments == 0) {
         return 0.0f;
     }
     
-    float correlation = numerator / denominator;
-    // Convert correlation (-1 to 1) to distance (0 to 1)
-    return (1.0f - correlation) / 2.0f;
+    size_t len = e1.size();
+    size_t seg_len = len / segments;
+    if (seg_len == 0) seg_len = 1;
+    
+    float total_diff = 0.0f;
+    size_t actual_segments = 0;
+    
+    for (size_t s = 0; s < segments; ++s) {
+        size_t start = s * seg_len;
+        size_t end = (s == segments - 1) ? len : (s + 1) * seg_len;
+        if (start >= len) break;
+        
+        // Compute mean and variance for each segment
+        float sum1 = 0, sum2 = 0;
+        float sq1 = 0, sq2 = 0;
+        size_t count = end - start;
+        
+        for (size_t i = start; i < end; ++i) {
+            sum1 += e1[i];
+            sum2 += e2[i];
+            sq1 += e1[i] * e1[i];
+            sq2 += e2[i] * e2[i];
+        }
+        
+        float mean1 = sum1 / count;
+        float mean2 = sum2 / count;
+        float var1 = sq1 / count - mean1 * mean1;
+        float var2 = sq2 / count - mean2 * mean2;
+        
+        // Mean difference (normalized)
+        float mean_diff = std::abs(mean1 - mean2);
+        
+        // Variance difference (compare energy dynamics)
+        float var_diff = std::abs(std::sqrt(std::max(0.0f, var1)) - std::sqrt(std::max(0.0f, var2)));
+        
+        total_diff += 0.7f * mean_diff + 0.3f * var_diff;
+        actual_segments++;
+    }
+    
+    // Normalize to 0-1 range (energy values are already 0-1)
+    return actual_segments > 0 ? utils::clamp(total_diff / actual_segments, 0.0f, 1.0f) : 0.0f;
+}
+
+float SimilarityCalculator::chroma_distance(const std::vector<float>& chroma1, const std::vector<float>& chroma2) const {
+    return utils::cosine_distance(chroma1, chroma2);
+}
+
+float SimilarityCalculator::duration_distance(float dur1, float dur2) const {
+    if (dur1 <= 0 || dur2 <= 0) return 0.0f;
+    // Ratio-based distance: normalized so that same duration = 0, double duration ~ 0.5
+    float ratio = std::max(dur1, dur2) / std::min(dur1, dur2);
+    // Map ratio [1, inf) -> distance [0, 1) using 1 - 1/ratio
+    return utils::clamp(1.0f - 1.0f / ratio, 0.0f, 1.0f);
 }
 
 } // namespace automix

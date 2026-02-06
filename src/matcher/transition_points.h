@@ -43,12 +43,30 @@ public:
         const TransitionConfig& config
     );
     
+    /**
+     * Find phrase boundaries (8-bar and 16-bar) from beat positions.
+     * @return Vector of time positions at phrase boundaries
+     */
+    std::vector<float> find_phrase_boundaries(const std::vector<float>& beats, int bars_per_phrase = 8);
+    
 private:
     // Find beat index closest to a time position
     int find_closest_beat(const std::vector<float>& beats, float time);
     
     // Get energy at a specific time
     float get_energy_at(const std::vector<float>& energy_curve, float time, float duration);
+    
+    // Get energy trend (derivative) at a specific time: negative = decreasing
+    float get_energy_trend(const std::vector<float>& energy_curve, float time, float duration);
+    
+    // Multi-factor score for a candidate transition point (lower = better)
+    float score_out_candidate(float t, float energy, float energy_trend,
+                              float phrase_alignment, float default_time, float duration);
+    float score_in_candidate(float t, float energy, float energy_trend,
+                             float phrase_alignment);
+    
+    // Check how well a time aligns with phrase boundaries (0 = perfect, 1 = worst)
+    float phrase_alignment_score(float time, const std::vector<float>& phrase_boundaries);
     
     // Calculate crossfade duration based on BPM and config
     float calculate_crossfade_duration(float bpm, const TransitionConfig& config);

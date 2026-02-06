@@ -56,6 +56,11 @@ private:
     float key_distance(const std::string& key1, const std::string& key2) const;
     float mfcc_distance(const std::vector<float>& mfcc1, const std::vector<float>& mfcc2) const;
     float energy_distance(const std::vector<float>& energy1, const std::vector<float>& energy2) const;
+    float chroma_distance(const std::vector<float>& chroma1, const std::vector<float>& chroma2) const;
+    float duration_distance(float dur1, float dur2) const;
+    
+    // Energy curve segmented comparison helper
+    float segment_energy_distance(const std::vector<float>& e1, const std::vector<float>& e2, size_t segments) const;
 };
 
 } // namespace automix
