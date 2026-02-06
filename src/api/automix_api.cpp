@@ -329,6 +329,21 @@ int automix_render(AutoMixEngine* engine, float* buffer, int frames) {
     return engine->engine->render(buffer, frames);
 }
 
+void automix_poll(AutoMixEngine* engine) {
+    if (!engine || !engine->engine) return;
+    engine->engine->poll();
+}
+
+AutoMixError automix_start_audio(AutoMixEngine* engine) {
+    if (!engine || !engine->engine) return AUTOMIX_ERROR_INVALID_ARGUMENT;
+    return engine->engine->start_audio() ? AUTOMIX_OK : AUTOMIX_ERROR_PLAYBACK_ERROR;
+}
+
+void automix_stop_audio(AutoMixEngine* engine) {
+    if (!engine || !engine->engine) return;
+    engine->engine->stop_audio();
+}
+
 int automix_get_sample_rate(AutoMixEngine* engine) {
     if (!engine || !engine->engine) return 44100;
     return engine->engine->sample_rate();

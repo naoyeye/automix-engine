@@ -13,7 +13,8 @@ Engine::Engine(const std::string& db_path)
     , decoder_(std::make_unique<Decoder>())
     , analyzer_(std::make_unique<Analyzer>())
     , playlist_generator_(std::make_unique<PlaylistGenerator>())
-    , scheduler_(std::make_unique<Scheduler>()) {
+    , scheduler_(std::make_unique<Scheduler>())
+    , audio_output_(std::make_unique<AudioOutput>(sample_rate_)) {
     
     if (!store_->is_open()) {
         last_error_ = "Failed to open database: " + store_->error();
@@ -24,9 +25,16 @@ Engine::Engine(const std::string& db_path)
     scheduler_->set_track_loader([this](int64_t track_id) {
         return this->load_track_audio(track_id);
     });
+    
+    // Setup audio output render callback -> calls scheduler render
+    audio_output_->set_render_callback([this](float* buffer, int frames) {
+        return this->render(buffer, frames);
+    });
 }
 
-Engine::~Engine() = default;
+Engine::~Engine() {
+    stop_audio();
+}
 
 bool Engine::is_valid() const {
     return store_ && store_->is_open();
@@ -160,6 +168,12 @@ bool Engine::play(const Playlist& playlist) {
     }
     
     scheduler_->play();
+    
+    // Auto-start audio output if not already running
+    if (!audio_output_->is_running()) {
+        audio_output_->start();
+    }
+    
     return true;
 }
 
@@ -173,6 +187,7 @@ void Engine::resume() {
 
 void Engine::stop() {
     scheduler_->stop();
+    stop_audio();
 }
 
 void Engine::skip() {
@@ -205,7 +220,23 @@ void Engine::set_transition_config(const TransitionConfig& config) {
 }
 
 int Engine::render(float* buffer, int frames) {
-    return scheduler_->render(buffer, frames, sample_rate());
+    return scheduler_->render(buffer, frames, sample_rate_);
+}
+
+bool Engine::start_audio() {
+    return audio_output_->start();
+}
+
+void Engine::stop_audio() {
+    audio_output_->stop();
+}
+
+bool Engine::is_audio_running() const {
+    return audio_output_->is_running();
+}
+
+void Engine::poll() {
+    scheduler_->poll();
 }
 
 Result<AudioBuffer> Engine::load_track_audio(int64_t track_id) {

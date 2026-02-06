@@ -11,6 +11,16 @@
 namespace automix {
 
 /**
+ * Mix parameters output for both decks (volume + EQ).
+ */
+struct MixParams {
+    float volume_a = 1.0f, volume_b = 0.0f;
+    // EQ gains in dB (0 = unity)
+    float eq_low_a  = 0.0f, eq_mid_a  = 0.0f, eq_high_a = 0.0f;
+    float eq_low_b  = 0.0f, eq_mid_b  = 0.0f, eq_high_b = 0.0f;
+};
+
+/**
  * Crossfader for mixing between two decks.
  */
 class Crossfader {
@@ -18,7 +28,8 @@ public:
     enum class CurveType {
         Linear,     // Linear crossfade
         EqualPower, // Equal power (constant loudness)
-        EQSwap      // EQ-based transition
+        EQSwap,     // EQ-based transition (swap bass)
+        HardCut     // Instant cut (for drops / breaks)
     };
     
     Crossfader();
@@ -63,14 +74,19 @@ public:
     bool is_automating() const { return automating_; }
     
     /**
-     * Get volume multipliers for both decks.
+     * Get volume multipliers for both decks (legacy, no EQ).
      * Call this from the audio thread.
-     * 
-     * @param deck_a_vol Output: volume for deck A
-     * @param deck_b_vol Output: volume for deck B
-     * @param frames Number of frames being processed (for automation advance)
      */
     void get_volumes(float& deck_a_vol, float& deck_b_vol, int frames = 0);
+    
+    /**
+     * Get full mix parameters for both decks (volume + EQ).
+     * Call this from the audio thread.
+     *
+     * @param params  Output struct filled with volume and EQ values.
+     * @param frames  Number of frames being processed (for automation advance).
+     */
+    void get_mix_params(MixParams& params, int frames = 0);
     
 private:
     std::atomic<float> position_{-1.0f};  // Start with deck A
@@ -83,8 +99,14 @@ private:
     int auto_total_frames_{0};
     int auto_current_frame_{0};
     
+    // Advance automation, returns current position
+    float advance_automation(int frames);
+    
     // Compute volumes from position
     void compute_volumes(float pos, float& vol_a, float& vol_b);
+    
+    // Compute full mix params from position
+    void compute_mix_params(float pos, MixParams& params);
 };
 
 } // namespace automix

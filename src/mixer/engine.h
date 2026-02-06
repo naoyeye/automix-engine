@@ -7,6 +7,7 @@
 
 #include "automix/types.h"
 #include "scheduler.h"
+#include "audio_output.h"
 #include "../core/store.h"
 #include "../decoder/decoder.h"
 #include "../analyzer/analyzer.h"
@@ -102,6 +103,7 @@ public:
     
     /**
      * Load and start playing a playlist.
+     * If audio output is available, starts it automatically.
      */
     bool play(const Playlist& playlist);
     
@@ -116,7 +118,7 @@ public:
     void resume();
     
     /**
-     * Stop playback.
+     * Stop playback and audio output.
      */
     void stop();
     
@@ -161,7 +163,8 @@ public:
     
     /**
      * Render audio frames.
-     * Call this from your audio callback.
+     * Call this from your audio callback (pull mode).
+     * If using start_audio() / stop_audio(), this is called automatically.
      * 
      * @param buffer Output buffer (interleaved stereo float32)
      * @param frames Number of frames to render
@@ -170,9 +173,33 @@ public:
     int render(float* buffer, int frames);
     
     /**
+     * Start platform audio output (CoreAudio on macOS).
+     * The engine will drive the render loop automatically.
+     * @return true if audio output started successfully.
+     */
+    bool start_audio();
+    
+    /**
+     * Stop platform audio output.
+     */
+    void stop_audio();
+    
+    /**
+     * Check if platform audio output is running.
+     */
+    bool is_audio_running() const;
+    
+    /**
+     * Poll for non-real-time work.
+     * Call this from your main / control thread periodically (e.g. every 20ms).
+     * Handles track pre-loading, transition completion, and status callbacks.
+     */
+    void poll();
+    
+    /**
      * Get sample rate.
      */
-    int sample_rate() const { return 44100; }
+    int sample_rate() const { return sample_rate_; }
     
     /**
      * Get number of channels.
@@ -188,9 +215,11 @@ private:
     std::unique_ptr<Analyzer> analyzer_;
     std::unique_ptr<PlaylistGenerator> playlist_generator_;
     std::unique_ptr<Scheduler> scheduler_;
+    std::unique_ptr<AudioOutput> audio_output_;
     
     TransitionConfig transition_config_;
     std::string last_error_;
+    int sample_rate_{44100};
 };
 
 } // namespace automix

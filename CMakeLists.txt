@@ -61,6 +61,7 @@ set(AUTOMIX_SOURCES
     src/mixer/crossfader.cpp
     src/mixer/scheduler.cpp
     src/mixer/engine.cpp
+    src/mixer/audio_output.cpp
     src/api/automix_api.cpp
 )
 

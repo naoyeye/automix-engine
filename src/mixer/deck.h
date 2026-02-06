@@ -13,7 +13,7 @@ namespace automix {
 
 /**
  * A single deck that plays one track.
- * Supports playback, seeking, and time-stretching.
+ * Supports playback, seeking, time-stretching, and 3-band EQ.
  */
 class Deck {
 public:
@@ -87,6 +87,7 @@ public:
     
     /**
      * Set volume (0.0 to 1.0).
+     * Volume changes are smoothed to prevent clicks.
      */
     void set_volume(float volume);
     
@@ -94,6 +95,19 @@ public:
      * Get current volume.
      */
     float volume() const { return volume_; }
+    
+    /**
+     * Set 3-band EQ gains.
+     * @param low_db  Low band gain in dB  (0 = unity, -inf to +12)
+     * @param mid_db  Mid band gain in dB
+     * @param high_db High band gain in dB
+     */
+    void set_eq(float low_db, float mid_db, float high_db);
+    
+    /**
+     * Get current EQ gains in dB.
+     */
+    void get_eq(float& low_db, float& mid_db, float& high_db) const;
     
     /**
      * Render audio frames to output buffer.
@@ -118,6 +132,9 @@ private:
     std::atomic<bool> playing_{false};
     std::atomic<float> volume_{1.0f};
     std::atomic<float> stretch_ratio_{1.0f};
+    std::atomic<float> eq_low_db_{0.0f};
+    std::atomic<float> eq_mid_db_{0.0f};
+    std::atomic<float> eq_high_db_{0.0f};
     int64_t track_id_{0};
 };
 

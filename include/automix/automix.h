@@ -301,6 +301,25 @@ void automix_set_transition_config(
 int automix_render(AutoMixEngine* engine, float* buffer, int frames);
 
 /**
+ * Poll for non-real-time work (track loading, status callbacks, etc.).
+ * Call this from your main / control thread periodically (e.g. every 20ms).
+ * Required when using automix_render() in a separate audio callback.
+ */
+void automix_poll(AutoMixEngine* engine);
+
+/**
+ * Start platform audio output (CoreAudio on macOS).
+ * The engine will drive the render loop automatically.
+ * @return AUTOMIX_OK on success.
+ */
+AutoMixError automix_start_audio(AutoMixEngine* engine);
+
+/**
+ * Stop platform audio output.
+ */
+void automix_stop_audio(AutoMixEngine* engine);
+
+/**
  * Get the sample rate used by the engine.
  */
 int automix_get_sample_rate(AutoMixEngine* engine);
