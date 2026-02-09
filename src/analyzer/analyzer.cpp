@@ -14,6 +14,36 @@
 #include <essentia/algorithmfactory.h>
 #include <essentia/essentiamath.h>
 #include <essentia/pool.h>
+#include <mutex>
+
+namespace {
+    class EssentiaManager {
+    public:
+        static EssentiaManager& instance() {
+            static EssentiaManager instance;
+            return instance;
+        }
+        
+        void ensure_initialized() {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!initialized_) {
+                essentia::init();
+                initialized_ = true;
+            }
+        }
+        
+        // We don't call shutdown() in the destructor because it can be tricky 
+        // with global statics during program exit. Essentia will clean up 
+        // with the process exit.
+        
+    private:
+        EssentiaManager() : initialized_(false) {}
+        ~EssentiaManager() = default;
+        
+        bool initialized_;
+        std::mutex mutex_;
+    };
+}
 #endif
 
 #include <cmath>
@@ -26,15 +56,11 @@ class Analyzer::Impl {
 public:
     Impl() {
 #ifdef AUTOMIX_HAS_ESSENTIA
-        essentia::init();
+        EssentiaManager::instance().ensure_initialized();
 #endif
     }
     
-    ~Impl() {
-#ifdef AUTOMIX_HAS_ESSENTIA
-        essentia::shutdown();
-#endif
-    }
+    ~Impl() = default;
     
     Result<TrackFeatures> analyze(const AudioBuffer& audio) {
         TrackFeatures features;
@@ -80,6 +106,40 @@ public:
     }
     
     Result<float> detect_bpm(const AudioBuffer& audio) {
+#ifdef AUTOMIX_HAS_ESSENTIA
+        try {
+            using namespace essentia;
+            using namespace essentia::standard;
+            
+            // Convert to mono
+            std::vector<Real> mono = to_mono(audio);
+            
+            AlgorithmFactory& factory = AlgorithmFactory::instance();
+            
+            // Use RhythmExtractor2013 for robust BPM detection
+            Algorithm* rhythm = factory.create("RhythmExtractor2013",
+                "method", "multifeature");
+                
+            std::vector<Real> ticks, estimates, bpmIntervals;
+            Real bpm, confidence;
+            
+            rhythm->input("signal").set(mono);
+            rhythm->output("bpm").set(bpm);
+            rhythm->output("ticks").set(ticks);
+            rhythm->output("confidence").set(confidence);
+            rhythm->output("estimates").set(estimates);
+            rhythm->output("bpmIntervals").set(bpmIntervals);
+            
+            rhythm->compute();
+            
+            delete rhythm;
+            
+            if (bpm > 0) return bpm;
+            
+        } catch (const std::exception& e) {
+            // Fallback to internal detector if Essentia fails
+        }
+#endif
         return bpm_detector_.detect(audio);
     }
     
@@ -199,11 +259,8 @@ private:
     }
     
     std::vector<essentia::Real> to_mono(const AudioBuffer& audio) {
-        std::vector<essentia::Real> mono(audio.frame_count());
-        for (size_t i = 0; i < audio.frame_count(); ++i) {
-            mono[i] = (audio.samples[i * 2] + audio.samples[i * 2 + 1]) / 2.0f;
-        }
-        return mono;
+        auto mono_float = audio.to_mono();
+        return std::vector<essentia::Real>(mono_float.begin(), mono_float.end());
     }
 #endif
     
@@ -218,11 +275,8 @@ private:
             return std::vector<float>(13, 0.0f);
         }
         
-        // Convert to mono
-        std::vector<float> mono(audio.frame_count());
-        for (size_t i = 0; i < audio.frame_count(); ++i) {
-            mono[i] = (audio.samples[i * 2] + audio.samples[i * 2 + 1]) / 2.0f;
-        }
+        // Convert to mono (no-op if already mono)
+        auto mono = audio.to_mono();
         
         // Simple spectral centroid as proxy for MFCC[0]
         std::vector<float> mfcc(13, 0.0f);

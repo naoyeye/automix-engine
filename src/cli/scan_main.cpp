@@ -12,9 +12,14 @@
 #include <cstring>
 
 void print_usage(const char* program) {
+    std::string default_db = "automix.db";
+#ifdef AUTOMIX_DEFAULT_DB_PATH
+    default_db = AUTOMIX_DEFAULT_DB_PATH;
+#endif
+
     std::cerr << "Usage: " << program << " [options] <music_directory>\n"
               << "\nOptions:\n"
-              << "  -d, --database <path>  Database file path (default: automix.db)\n"
+              << "  -d, --database <path>  Database file path (default: " << default_db << ")\n"
               << "  -r, --recursive        Scan subdirectories (default: true)\n"
               << "  -n, --no-recursive     Don't scan subdirectories\n"
               << "  -h, --help             Show this help\n";
@@ -29,7 +34,11 @@ void scan_callback(const char* file, int processed, int total, void* user_data) 
 }
 
 int main(int argc, char* argv[]) {
+#ifdef AUTOMIX_DEFAULT_DB_PATH
+    std::string db_path = AUTOMIX_DEFAULT_DB_PATH;
+#else
     std::string db_path = "automix.db";
+#endif
     std::string music_dir;
     bool recursive = true;
     

@@ -78,11 +78,8 @@ std::vector<float> BPMDetector::compute_onset_envelope(const AudioBuffer& audio)
     const int frame_size = 1024;
     const int hop_size = 512;
     
-    // Convert to mono
-    std::vector<float> mono(audio.frame_count());
-    for (size_t i = 0; i < audio.frame_count(); ++i) {
-        mono[i] = (audio.samples[i * 2] + audio.samples[i * 2 + 1]) / 2.0f;
-    }
+    // Convert to mono (no-op if already mono)
+    auto mono = audio.to_mono();
     
     if (mono.size() < static_cast<size_t>(frame_size)) {
         return {};
@@ -186,6 +183,30 @@ float BPMDetector::estimate_bpm_autocorr(const std::vector<float>& onset_envelop
     
     // Convert lag to BPM
     float bpm = (sample_rate * 60.0f) / best_lag;
+    
+    // Heuristic: Prefer BPM in 70-160 range (typical for most music)
+    // If BPM is very high (> 160), check if half-tempo (lag * 2) has strong correlation
+    if (bpm > 160.0f) {
+        int half_tempo_lag = best_lag * 2;
+        if (half_tempo_lag <= max_lag) {
+            float half_corr = 0.0f;
+            int count = 0;
+            for (size_t i = 0; i < onset_envelope.size() - half_tempo_lag; ++i) {
+                half_corr += onset_envelope[i] * onset_envelope[i + half_tempo_lag];
+                count++;
+            }
+            if (count > 0) half_corr /= count;
+            
+            // If half tempo correlation is decent (e.g., > 0.5 * best_corr), prefer it
+            // Relaxed threshold because sub-harmonics are usually weaker
+            if (half_corr > best_corr * 0.4f) {
+                bpm /= 2.0f;
+            }
+        } else {
+            // If we can't check lag (too long), just assume it's double time if > 180
+            if (bpm > 180.0f) bpm /= 2.0f;
+        }
+    }
     
     return bpm;
 }

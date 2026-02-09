@@ -5,6 +5,9 @@
 #include "engine.h"
 #include "../core/utils.h"
 #include <filesystem>
+#include <thread>
+#include <atomic>
+#include <mutex>
 
 namespace automix {
 
@@ -55,58 +58,125 @@ int Engine::scan(const std::string& music_dir, bool recursive, ScanCallback call
     // Find all audio files
     auto files = utils::find_audio_files(dir_path, recursive);
     int total = static_cast<int>(files.size());
-    int analyzed = 0;
+    
+    // Filter out files that are already analyzed (check serially — fast DB lookup)
+    struct ScanJob {
+        std::filesystem::path path;
+        int64_t file_mtime;
+    };
+    std::vector<ScanJob> jobs;
+    int already_analyzed = 0;
     
     for (int i = 0; i < total; ++i) {
         const auto& file = files[i];
         std::string path_str = file.string();
-        
-        if (callback) {
-            callback(path_str, i, total);
-        }
-        
-        // Check if already analyzed and up-to-date
         int64_t file_mtime = utils::file_modified_time(file);
+        
         if (!store_->needs_analysis(path_str, file_mtime)) {
-            analyzed++;
-            continue;
+            already_analyzed++;
+            if (callback) {
+                callback(path_str, i + 1, total);
+            }
+        } else {
+            jobs.push_back({file, file_mtime});
         }
+    }
+    
+    if (jobs.empty()) {
+        store_->cleanup_missing_files();
+        return already_analyzed;
+    }
+    
+    // Multi-threaded scanning
+    // Use half the cores (capped at 4) to avoid overheating while still gaining speedup
+    unsigned int hw_threads = std::thread::hardware_concurrency();
+    unsigned int num_threads = std::max(1u, std::min(4u, hw_threads / 2));
+    num_threads = std::min(num_threads, static_cast<unsigned int>(jobs.size()));
+    
+    std::atomic<int> job_index{0};
+    std::atomic<int> analyzed_count{0};
+    std::atomic<int> progress_count{already_analyzed};
+    std::mutex callback_mutex;
+    
+    auto worker = [&]() {
+        // Each worker has its own Decoder and Analyzer (no shared state)
+        Decoder local_decoder;
+        Analyzer local_analyzer;
         
-        // Decode
-        auto decode_result = decoder_->decode(path_str);
-        if (decode_result.failed()) {
-            continue;  // Skip files that can't be decoded
+        while (true) {
+            int idx = job_index.fetch_add(1);
+            if (idx >= static_cast<int>(jobs.size())) break;
+            
+            const auto& job = jobs[idx];
+            std::string path_str = job.path.string();
+            
+            // Decode (analysis mode: mono 22050Hz)
+            auto decode_result = local_decoder.decode_for_analysis(path_str);
+            if (decode_result.failed()) {
+                int p = progress_count.fetch_add(1) + 1;
+                if (callback) {
+                    std::lock_guard<std::mutex> lock(callback_mutex);
+                    callback(path_str, p, total);
+                }
+                continue;
+            }
+            
+            // Analyze
+            auto analyze_result = local_analyzer.analyze(decode_result.value());
+            if (analyze_result.failed()) {
+                int p = progress_count.fetch_add(1) + 1;
+                if (callback) {
+                    std::lock_guard<std::mutex> lock(callback_mutex);
+                    callback(path_str, p, total);
+                }
+                continue;
+            }
+            
+            // Store (thread-safe: lock the Store's write mutex)
+            TrackInfo track;
+            track.path = path_str;
+            track.bpm = analyze_result.value().bpm;
+            track.beats = analyze_result.value().beats;
+            track.key = analyze_result.value().key;
+            track.mfcc = analyze_result.value().mfcc;
+            track.chroma = analyze_result.value().chroma;
+            track.energy_curve = analyze_result.value().energy_curve;
+            track.duration = analyze_result.value().duration;
+            track.analyzed_at = utils::current_timestamp();
+            track.file_modified_at = job.file_mtime;
+            
+            {
+                std::lock_guard<std::mutex> lock(store_->write_mutex());
+                auto upsert_result = store_->upsert_track(track);
+                if (upsert_result.ok()) {
+                    analyzed_count.fetch_add(1);
+                }
+            }
+            
+            int p = progress_count.fetch_add(1) + 1;
+            if (callback) {
+                std::lock_guard<std::mutex> lock(callback_mutex);
+                callback(path_str, p, total);
+            }
         }
-        
-        // Analyze
-        auto analyze_result = analyzer_->analyze(decode_result.value());
-        if (analyze_result.failed()) {
-            continue;
-        }
-        
-        // Store
-        TrackInfo track;
-        track.path = path_str;
-        track.bpm = analyze_result.value().bpm;
-        track.beats = analyze_result.value().beats;
-        track.key = analyze_result.value().key;
-        track.mfcc = analyze_result.value().mfcc;
-        track.chroma = analyze_result.value().chroma;
-        track.energy_curve = analyze_result.value().energy_curve;
-        track.duration = analyze_result.value().duration;
-        track.analyzed_at = utils::current_timestamp();
-        track.file_modified_at = file_mtime;
-        
-        auto upsert_result = store_->upsert_track(track);
-        if (upsert_result.ok()) {
-            analyzed++;
-        }
+    };
+    
+    // Launch worker threads
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+    for (unsigned int i = 0; i < num_threads; ++i) {
+        threads.emplace_back(worker);
+    }
+    
+    // Wait for all workers to finish
+    for (auto& t : threads) {
+        t.join();
     }
     
     // Cleanup removed files
     store_->cleanup_missing_files();
     
-    return analyzed;
+    return already_analyzed + analyzed_count.load();
 }
 
 int Engine::track_count() const {

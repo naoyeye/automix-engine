@@ -62,11 +62,8 @@ Result<std::vector<float>> KeyDetector::compute_chroma(const AudioBuffer& audio)
         return "Empty audio buffer";
     }
     
-    // Convert to mono
-    std::vector<float> mono(audio.frame_count());
-    for (size_t i = 0; i < audio.frame_count(); ++i) {
-        mono[i] = (audio.samples[i * 2] + audio.samples[i * 2 + 1]) / 2.0f;
-    }
+    // Convert to mono (no-op if already mono)
+    auto mono = audio.to_mono();
     
     const int frame_size = 4096;
     const int hop_size = 2048;

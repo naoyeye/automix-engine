@@ -58,7 +58,7 @@ private:
  * ============================================================================ */
 
 struct AudioBuffer {
-    std::vector<float> samples;  // Interleaved L/R
+    std::vector<float> samples;  // Interleaved L/R (or mono if channels==1)
     int sample_rate = 44100;
     int channels = 2;
     
@@ -68,6 +68,21 @@ struct AudioBuffer {
     
     float duration_seconds() const {
         return sample_rate > 0 ? static_cast<float>(frame_count()) / sample_rate : 0.0f;
+    }
+    
+    /**
+     * Get mono samples. If already mono, returns a reference-like copy.
+     * If stereo, downmixes to mono.
+     */
+    std::vector<float> to_mono() const {
+        if (channels == 1) {
+            return samples;
+        }
+        std::vector<float> mono(frame_count());
+        for (size_t i = 0; i < frame_count(); ++i) {
+            mono[i] = (samples[i * 2] + samples[i * 2 + 1]) / 2.0f;
+        }
+        return mono;
     }
 };
 

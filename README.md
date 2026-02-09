@@ -18,12 +18,16 @@
 - C++17 编译器
 - FFmpeg (libavformat, libavcodec, libswresample)
 - SQLite3
+- Essentia (核心音频分析引擎)
 
 ### 可选
-- Essentia (完整音频分析)
 - Rubber Band (time-stretch 功能)
 
-## macOS 安装依赖
+## 分发说明 (Distribution)
+
+对于最终用户（macOS/iOS App 用户），本项目将采用 **XCFramework** 形式分发，所有依赖（包括 Essentia 和 FFmpeg）都将以静态库形式集成在 App 二进制文件中。用户无需手动安装任何依赖。
+
+## macOS 开发环境配置
 
 ```bash
 brew install cmake ffmpeg sqlite3
@@ -32,21 +36,33 @@ brew install cmake ffmpeg sqlite3
 brew install rubberband
 ```
 
-### Essentia（可选，完整音频分析）
+### Essentia（必需，完整音频分析）
 
-Essentia 不在 Homebrew 官方仓库，需要从源码编译：
+https://github.com/MTG/essentia/
 
-```bash
-# 安装依赖
-brew install eigen fftw libyaml libsamplerate taglib chromaprint
+Essentia 不在 Homebrew 官方仓库，需要从源码编译。相关文档
+https://github.com/MTG/essentia/blob/master/doc/sphinxdoc/installing.rst
 
-# 编译安装
-git clone https://github.com/MTG/essentia.git
-cd essentia
-python3 waf configure --build-static
-python3 waf
-sudo python3 waf install
-```
+可能遇到 C++ 标准版本不匹配问题导致执行 python3 waf 时报错
+
+`error: Eigen requires at least c++14 support.`
+
+`std::enable_if_t`, `std::integer_sequence` 等 C++14 特性的缺失。
+
+
+解决方案
+
+需要告诉 waf 使用更高的 C++ 标准（至少 C++14，建议 C++17）。
+请在执行配置时添加 CXXFLAGS 环境变量：
+
+1. 
+清理旧的构建配置：
+`rm -rf build`
+
+2. 重新配置 (指定 C++17)
+
+`CXXFLAGS="-std=c++17" python3 waf configure --build-static --with-examples --with-vamp`
+
 
 或使用 Conda：
 
@@ -54,13 +70,16 @@ sudo python3 waf install
 conda install -c conda-forge essentia
 ```
 
-> 注意：不安装 Essentia 也可正常使用，项目会使用内置的简化分析功能。
+> 注意：项目现在默认要求安装 Essentia 以确保准确的 BPM 和 Key 检测功能。
 
 ## 编译
 
 ```bash
 mkdir build && cd build
 cmake ..
+# 如果遇到架构不兼容问题 (Apple Silicon)，尝试:
+# cmake -DCMAKE_OSX_ARCHITECTURES=x86_64 ..
+
 cmake --build .
 ```
 
@@ -76,11 +95,41 @@ cmake --build .
 ./automix-playlist --list
 
 # 生成播放列表
-./automix-playlist --seed 1 --count 10
+./automix-playlist --seed {start_track_id} --count {track_count} --random-seed {num}
 
 # 播放（macOS）
-./automix-play --seed 1 --count 10
+./automix-play --seed {start_track_id} --count {track_count} --random-seed {num}
+
+# 快速检验过渡效果
+./preview_transition.sh song1.mp3 song2.mp3 output.wav
 ```
+
+### 便捷检验工具
+
+为了方便开发者快速调整和检验混合算法，项目提供了离线渲染工具链。
+
+**1. 离线渲染工具 (`automix-render-transition`)**
+
+该工具可以直接调用引擎内核，以非实时速度（比播放速度快很多）渲染出包含过渡效果的音频片段。
+
+```bash
+# 编译
+cd build && make automix-render-transition
+
+# 使用 (通常通过脚本调用)
+./automix-render-transition automix.db {track_id_1} {track_id_2} output.wav
+```
+
+**2. 一键预览脚本 (`preview_transition.sh`)**
+
+无需手动管理数据库，直接输入两个音频文件即可生成过渡预览。
+
+```bash
+# 用法: ./preview_transition.sh <file1> <file2> [output.wav]
+./preview_transition.sh song1.mp3 song2.mp3 preview.wav
+```
+
+生成的 WAV 文件可以直接拖入 Audacity 等音频编辑软件中，直观地观察 Crossfade 曲线、节奏对齐情况和能量变化。
 
 ### C API
 

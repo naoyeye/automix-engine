@@ -177,6 +177,7 @@ PlaylistHandle automix_generate_playlist(
         cpp_rules.max_key_distance = rules->max_key_distance;
         cpp_rules.min_energy_match = rules->min_energy_match;
         cpp_rules.allow_cross_style = rules->allow_cross_style != 0;
+        cpp_rules.random_seed = rules->random_seed;
     }
     
     auto playlist = engine->engine->generate_playlist(seed_track_id, count, cpp_rules);

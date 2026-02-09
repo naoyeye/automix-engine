@@ -5,10 +5,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Default DB path for development
+add_compile_definitions(AUTOMIX_DEFAULT_DB_PATH=\"${CMAKE_SOURCE_DIR}/automix.db\")
+
 # Build options
 option(AUTOMIX_BUILD_TESTS "Build tests" ON)
 option(AUTOMIX_BUILD_EXAMPLES "Build examples" ON)
 option(AUTOMIX_BUILD_CLI "Build CLI tools" ON)
+option(ENABLE_ESSENTIA "Enable Essentia for advanced analysis" ON)
 
 # Platform detection
 if(APPLE)
@@ -38,8 +42,10 @@ pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
 # SQLite3
 find_package(SQLite3 REQUIRED)
 
-# Essentia (optional - will use simplified analysis if not found)
-pkg_check_modules(ESSENTIA essentia)
+# Essentia
+if(ENABLE_ESSENTIA)
+    pkg_check_modules(ESSENTIA REQUIRED essentia)
+endif()
 
 # Rubber Band (optional - will skip time-stretch if not found)
 pkg_check_modules(RUBBERBAND rubberband)
@@ -147,6 +153,10 @@ if(AUTOMIX_BUILD_CLI)
     # automix-play
     add_executable(automix-play src/cli/play_main.cpp)
     target_link_libraries(automix-play PRIVATE automix)
+
+    # automix-render-transition
+    add_executable(automix-render-transition src/cli/render_transition.cpp)
+    target_link_libraries(automix-render-transition PRIVATE automix)
 endif()
 
 # Examples

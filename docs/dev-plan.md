@@ -40,12 +40,48 @@
 [x] 音频输出 (CoreAudio AudioUnit)
 [x] Engine 集成 (AudioOutput + poll + C API 扩展)
 
-## 第五阶段：CLI 工具 & 测试
-[ ] automix-scan 扫描工具
-[ ] automix-playlist 播放列表工具
-[ ] automix-play 播放工具
+## 第五阶段：CLI 工具 & 测试 ✅ (已完成)
+
+[x] automix-scan 扫描工具 (参数解析 + 进度回调 + 递归扫描)
+[x] automix-playlist 播放列表工具 (曲库列表 + 播放列表生成 + 规则配置)
+[x] automix-play 播放工具 (CoreAudio 播放 + 自动过渡 + EQ Swap + 信号处理)
+[x] 测试套件 (test_basic + test_phase2 + test_phase3 + test_phase4, 全部通过)
+
+# 下一步开发计划
+
+根据原始计划和当前状态，以下是建议的后续开发路线：
 
 ## 第六阶段：优化与扩展
-[ ] 性能优化
-[ ] Swift 包装层 (macOS/iOS 集成)
-[ ] 文档完善
+
+1. 项目管理基础设施
+[x] 初始化 Git 仓库，创建首次提交
+[x] 更新 dev-plan.md，标记第五阶段为已完成
+
+2. 性能优化
+[ ] 音频解码性能 profiling（大曲库 100+ 首歌扫描测试）
+[ ] Scheduler 的 lock-free queue 优化验证
+[ ] 内存使用分析（大文件 FLAC/DSD 场景）
+[ ] 音频线程延迟测量（目标 < 20ms）
+
+3. Swift 包装层（macOS/iOS 集成）
+[ ] 设计 Swift wrapper API（AutoMixEngine class）
+[ ] 创建 Swift Package（SPM 支持）
+[ ] 类型桥接（C struct → Swift struct）
+[ ] 回调机制的 Swift 封装（闭包/Combine/async-await）
+[ ] macOS 示例 App（SwiftUI + CoreAudio 验证）
+
+4. 文档完善
+[ ] API 参考文档（每个 C API 函数的详细说明）
+[ ] 集成指南（如何在 App 中使用 libautomix）
+[ ] 架构设计文档（模块关系、线程模型、数据流）
+
+中期（扩展功能）
+5. 更多过渡策略
+[ ] Filter Sweep 过渡（低通/高通滤波器扫频）
+[ ] Echo Out 过渡（回声渐隐效果）
+[ ] 用户可自定义过渡策略的插件机制
+
+6. 跨平台支持
+[ ] Linux 音频后端（PulseAudio / ALSA）
+[ ] Windows 音频后端（WASAPI）
+[ ] Android 音频后端（AAudio / Oboe）

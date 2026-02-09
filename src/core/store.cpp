@@ -20,6 +20,7 @@ Store::Store(const std::string& db_path) {
     
     // Enable WAL mode for better concurrency
     sqlite3_exec(db_, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(db_, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
     
     init_schema();
 }

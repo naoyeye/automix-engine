@@ -59,6 +59,7 @@ typedef struct {
     float min_energy_match;     /* Minimum energy similarity (0.0-1.0) */
     const char** style_filter;  /* NULL-terminated array of styles, or NULL for any */
     int allow_cross_style;      /* Allow mixing different styles */
+    uint32_t random_seed;       /* Random seed for reproducible playlists (0 = non-deterministic) */
 } AutoMixPlaylistRules;
 
 /* Transition configuration */

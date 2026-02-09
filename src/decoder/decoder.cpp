@@ -11,6 +11,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/opt.h>
+#include <libavutil/log.h>
 #include <libswresample/swresample.h>
 }
 
@@ -20,10 +21,24 @@ namespace automix {
 
 class Decoder::Impl {
 public:
-    Impl() = default;
+    Impl() {
+        // Suppress FFmpeg warnings (e.g. "Could not update timestamps for discarded samples")
+        av_log_set_level(AV_LOG_ERROR);
+    }
     ~Impl() = default;
     
     Result<AudioBuffer> decode(const std::string& path, int target_sample_rate) {
+        return decode_internal(path, target_sample_rate, 2);
+    }
+    
+    Result<AudioBuffer> decode_for_analysis(const std::string& path) {
+        return decode_internal(path, 22050, 1);
+    }
+    
+    /**
+     * Internal decode method supporting configurable sample rate and channels.
+     */
+    Result<AudioBuffer> decode_internal(const std::string& path, int target_sample_rate, int target_channels) {
         AVFormatContext* format_ctx = nullptr;
         AVCodecContext* codec_ctx = nullptr;
         SwrContext* swr_ctx = nullptr;
@@ -32,7 +47,7 @@ public:
         
         AudioBuffer buffer;
         buffer.sample_rate = target_sample_rate > 0 ? target_sample_rate : 44100;
-        buffer.channels = 2;
+        buffer.channels = target_channels > 0 ? target_channels : 2;
         
         // Cleanup helper
         auto cleanup = [&]() {
@@ -101,8 +116,13 @@ public:
             return "Failed to open codec";
         }
         
-        // Setup resampler
-        AVChannelLayout out_ch_layout = AV_CHANNEL_LAYOUT_STEREO;
+        // Setup resampler - configure output channel layout based on target_channels
+        AVChannelLayout out_ch_layout;
+        if (buffer.channels == 1) {
+            out_ch_layout = AV_CHANNEL_LAYOUT_MONO;
+        } else {
+            out_ch_layout = AV_CHANNEL_LAYOUT_STEREO;
+        }
         AVChannelLayout in_ch_layout;
         
         if (codec_ctx->ch_layout.nb_channels > 0) {
@@ -266,6 +286,10 @@ Decoder::~Decoder() = default;
 
 Result<AudioBuffer> Decoder::decode(const std::string& path, int target_sample_rate) {
     return impl_->decode(path, target_sample_rate);
+}
+
+Result<AudioBuffer> Decoder::decode_for_analysis(const std::string& path) {
+    return impl_->decode_for_analysis(path);
 }
 
 float Decoder::get_duration(const std::string& path) {

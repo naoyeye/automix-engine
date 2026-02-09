@@ -5,6 +5,23 @@ out/
 bin/
 lib/
 
+# Data files
+automix.db
+automix.db-journal
+automix.db-shm
+automix.db-wal
+
+# Audio files
+audio-files/
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.aac
+*.m4a
+*.aiff
+*.dsd
+
 # Libraries
 *.a
 *.so
@@ -113,3 +130,13 @@ doxygen/
 *.m4a
 !tests/fixtures/*.wav
 !tests/fixtures/*.mp3
+
+# Plans
+plans/
+
+# Preview script output
+transition_preview.wav
+temp_preview.db
+temp_preview.db-journal
+temp_preview.db-shm
+temp_preview.db-wal

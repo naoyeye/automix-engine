@@ -35,6 +35,16 @@ public:
     Result<AudioBuffer> decode(const std::string& path, int target_sample_rate = 44100);
     
     /**
+     * Decode an audio file for analysis purposes only.
+     * Outputs mono 22050Hz to reduce data by 4x compared to full decode.
+     * Use this for scanning/analysis; use decode() for playback.
+     * 
+     * @param path Path to audio file
+     * @return AudioBuffer (mono, 22050Hz) or error
+     */
+    Result<AudioBuffer> decode_for_analysis(const std::string& path);
+    
+    /**
      * Get audio duration without full decode.
      * 
      * @param path Path to audio file

@@ -52,20 +52,31 @@ void status_callback(
 }
 
 void print_usage(const char* program) {
+    std::string default_db = "automix.db";
+#ifdef AUTOMIX_DEFAULT_DB_PATH
+    default_db = AUTOMIX_DEFAULT_DB_PATH;
+#endif
+
     std::cerr << "Usage: " << program << " [options] --seed <track_id>\n"
               << "\nOptions:\n"
-              << "  -d, --database <path>  Database file path (default: automix.db)\n"
+              << "  -d, --database <path>  Database file path (default: " << default_db << ")\n"
               << "  -s, --seed <id>        Seed track ID (required)\n"
               << "  -c, --count <n>        Number of tracks (default: 10)\n"
+              << "  -r, --random-seed <n>  Random seed for reproducible playlists (0 = random)\n"
               << "  -e, --eq-swap          Use EQ swap transitions\n"
               << "  -b, --beats <n>        Crossfade beats (default: 16)\n"
               << "  -h, --help             Show this help\n";
 }
 
 int main(int argc, char* argv[]) {
+#ifdef AUTOMIX_DEFAULT_DB_PATH
+    std::string db_path = AUTOMIX_DEFAULT_DB_PATH;
+#else
     std::string db_path = "automix.db";
+#endif
     int64_t seed_id = -1;
     int count = 10;
+    uint32_t random_seed = 0;
     bool eq_swap = false;
     float crossfade_beats = 16.0f;
     
@@ -80,6 +91,8 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc) seed_id = std::stoll(argv[++i]);
         } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--count") == 0) {
             if (i + 1 < argc) count = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--random-seed") == 0) {
+            if (i + 1 < argc) random_seed = static_cast<uint32_t>(std::stoul(argv[++i]));
         } else if (strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--eq-swap") == 0) {
             eq_swap = true;
         } else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--beats") == 0) {
@@ -120,6 +133,7 @@ int main(int argc, char* argv[]) {
     rules.bpm_tolerance = 0.1f;
     rules.allow_key_change = 1;
     rules.max_key_distance = 2;
+    rules.random_seed = random_seed;
     
     PlaylistHandle playlist = automix_generate_playlist(engine, seed_id, count, &rules);
     if (!playlist) {

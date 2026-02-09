@@ -11,6 +11,7 @@
 #include <vector>
 #include <optional>
 #include <memory>
+#include <mutex>
 
 namespace automix {
 
@@ -96,6 +97,12 @@ public:
      */
     int cleanup_missing_files();
     
+    /**
+     * Get the mutex for thread-safe write operations.
+     * Used by Engine for multi-threaded scanning.
+     */
+    std::mutex& write_mutex() { return write_mutex_; }
+    
 private:
     void init_schema();
     
@@ -105,6 +112,7 @@ private:
     
     sqlite3* db_ = nullptr;
     std::string last_error_;
+    std::mutex write_mutex_;
 };
 
 } // namespace automix

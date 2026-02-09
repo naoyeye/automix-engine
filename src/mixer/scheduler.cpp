@@ -230,7 +230,8 @@ void Scheduler::rt_update(int frames) {
     }
     
     // Check if crossfader automation finished (transition complete)
-    if (transitioning_ && !crossfader_.is_automating()) {
+    // Guard with !transition_finished_ to prevent re-setting after poll() consumes it
+    if (transitioning_ && !crossfader_.is_automating() && !transition_finished_.load()) {
         transition_finished_ = true;
     }
     
@@ -263,6 +264,10 @@ void Scheduler::poll() {
     
     // Handle transition completion
     if (transition_finished_.exchange(false)) {
+        // FIRST: clear transitioning_ to prevent audio thread from re-setting
+        // transition_finished_ in the window between exchange(false) and here
+        transitioning_ = false;
+        
         // Swap decks
         std::swap(active_deck_, next_deck_);
         
@@ -271,7 +276,6 @@ void Scheduler::poll() {
         next_deck_->unload();
         
         current_index_++;
-        transitioning_ = false;
         state_ = PlaybackState::Playing;
         
         // Pre-load next track
@@ -279,8 +283,9 @@ void Scheduler::poll() {
             load_track_to_deck(*next_deck_, playlist_.entries[current_index_ + 1].track_id);
         }
         
-        // Reset crossfader for next transition
-        crossfader_.set_position(-1.0f);
+        // Reset crossfader to route audio to the correct physical deck
+        // after swap: active_deck_ alternates between deck_a_ and deck_b_
+        crossfader_.set_position(active_deck_ == deck_a_.get() ? -1.0f : 1.0f);
         
         notify_status();
     }
@@ -292,6 +297,9 @@ void Scheduler::poll() {
             current_index_++;
             std::swap(active_deck_, next_deck_);
             active_deck_->play();
+            
+            // Route crossfader to the correct physical deck
+            crossfader_.set_position(active_deck_ == deck_a_.get() ? -1.0f : 1.0f);
             
             // Pre-load next
             if (current_index_ + 1 < playlist_.size()) {
@@ -365,9 +373,12 @@ void Scheduler::start_transition() {
         crossfader_.set_curve(Crossfader::CurveType::EQSwap);
     }
     
-    // Start crossfade automation — use actual sample rate
+    // Start crossfade automation — direction depends on which deck is active
+    // If active is deck_a_, animate -1→+1 (A→B); if deck_b_, animate +1→-1 (B→A)
+    float from = (active_deck_ == deck_a_.get()) ? -1.0f : 1.0f;
+    float to   = (active_deck_ == deck_a_.get()) ? 1.0f : -1.0f;
     int crossfade_frames = static_cast<int>(crossfade_duration * sample_rate_);
-    crossfader_.start_automation(-1.0f, 1.0f, crossfade_frames);
+    crossfader_.start_automation(from, to, crossfade_frames);
     
     transitioning_ = true;
     state_ = PlaybackState::Transitioning;

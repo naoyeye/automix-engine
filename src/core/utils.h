@@ -184,20 +184,27 @@ inline bool is_audio_file(const std::filesystem::path& path) {
 }
 
 inline std::vector<std::filesystem::path> find_audio_files(
-    const std::filesystem::path& directory,
+    const std::filesystem::path& path,
     bool recursive = true
 ) {
     std::vector<std::filesystem::path> files;
     
     try {
+        if (std::filesystem::is_regular_file(path)) {
+            if (is_audio_file(path)) {
+                files.push_back(path);
+            }
+            return files;
+        }
+
         if (recursive) {
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(path)) {
                 if (entry.is_regular_file() && is_audio_file(entry.path())) {
                     files.push_back(entry.path());
                 }
             }
         } else {
-            for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            for (const auto& entry : std::filesystem::directory_iterator(path)) {
                 if (entry.is_regular_file() && is_audio_file(entry.path())) {
                     files.push_back(entry.path());
                 }
