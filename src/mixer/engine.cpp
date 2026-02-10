@@ -232,17 +232,17 @@ Playlist Engine::create_playlist(const std::vector<int64_t>& track_ids) {
 }
 
 bool Engine::play(const Playlist& playlist) {
+    // Start audio first so we can decode tracks to the actual output sample rate.
+    if (!audio_output_->is_running()) {
+        start_audio();  // best-effort; playback can still run without platform output
+    }
+    
     if (!scheduler_->load_playlist(playlist)) {
         last_error_ = "Failed to load playlist";
         return false;
     }
     
     scheduler_->play();
-    
-    // Auto-start audio output if not already running
-    if (!audio_output_->is_running()) {
-        audio_output_->start();
-    }
     
     return true;
 }
@@ -294,7 +294,12 @@ int Engine::render(float* buffer, int frames) {
 }
 
 bool Engine::start_audio() {
-    return audio_output_->start();
+    bool ok = audio_output_->start();
+    if (ok) {
+        sample_rate_ = audio_output_->sample_rate();
+        scheduler_->set_sample_rate(sample_rate_);
+    }
+    return ok;
 }
 
 void Engine::stop_audio() {
@@ -315,7 +320,7 @@ Result<AudioBuffer> Engine::load_track_audio(int64_t track_id) {
         return "Track not found";
     }
     
-    return decoder_->decode(track_opt->path);
+    return decoder_->decode(track_opt->path, sample_rate_);
 }
 
 } // namespace automix

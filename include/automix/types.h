@@ -241,6 +241,7 @@ struct TransitionConfig {
     float crossfade_beats = 16.0f;      // Number of beats for crossfade
     bool use_eq_swap = false;           // Use EQ-based transition
     float stretch_limit = 0.06f;        // Max ±6% time stretch
+    float stretch_recovery_seconds = 6.0f; // Smoothly return to 1.0x after transition
     float min_transition_seconds = 4.0f;
     float max_transition_seconds = 32.0f;
 };

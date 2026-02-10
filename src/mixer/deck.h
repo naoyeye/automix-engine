@@ -81,6 +81,12 @@ public:
     void set_stretch_ratio(float ratio);
     
     /**
+     * Smoothly recover stretch ratio back to 1.0 over N seconds.
+     * If seconds <= 0, recovery is immediate.
+     */
+    void start_stretch_recovery(float seconds);
+    
+    /**
      * Get current stretch ratio.
      */
     float stretch_ratio() const { return stretch_ratio_; }
@@ -132,6 +138,8 @@ private:
     std::atomic<bool> playing_{false};
     std::atomic<float> volume_{1.0f};
     std::atomic<float> stretch_ratio_{1.0f};
+    std::atomic<bool> stretch_recovering_{false};
+    std::atomic<float> stretch_recover_remaining_seconds_{0.0f};
     std::atomic<float> eq_low_db_{0.0f};
     std::atomic<float> eq_mid_db_{0.0f};
     std::atomic<float> eq_high_db_{0.0f};

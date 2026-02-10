@@ -65,6 +65,7 @@ void print_usage(const char* program) {
               << "  -r, --random-seed <n>  Random seed for reproducible playlists (0 = random)\n"
               << "  -e, --eq-swap          Use EQ swap transitions\n"
               << "  -b, --beats <n>        Crossfade beats (default: 16)\n"
+              << "  -R, --stretch-recover <sec>  Seconds to recover stretch back to 1.0 (default: 6)\n"
               << "  -h, --help             Show this help\n";
 }
 
@@ -79,6 +80,7 @@ int main(int argc, char* argv[]) {
     uint32_t random_seed = 0;
     bool eq_swap = false;
     float crossfade_beats = 16.0f;
+    float stretch_recovery_seconds = 6.0f;
     
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -97,6 +99,8 @@ int main(int argc, char* argv[]) {
             eq_swap = true;
         } else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--beats") == 0) {
             if (i + 1 < argc) crossfade_beats = std::atof(argv[++i]);
+        } else if (strcmp(argv[i], "-R") == 0 || strcmp(argv[i], "--stretch-recover") == 0) {
+            if (i + 1 < argc) stretch_recovery_seconds = std::atof(argv[++i]);
         }
     }
     
@@ -124,6 +128,7 @@ int main(int argc, char* argv[]) {
     config.crossfade_beats = crossfade_beats;
     config.use_eq_swap = eq_swap ? 1 : 0;
     config.stretch_limit = 0.06f;
+    config.stretch_recovery_seconds = stretch_recovery_seconds;
     automix_set_transition_config(engine, &config);
     
     // Generate playlist

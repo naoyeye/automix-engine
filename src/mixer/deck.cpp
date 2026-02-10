@@ -362,6 +362,9 @@ void Deck::unload() {
     playing_ = false;
     loaded_ = false;
     track_id_ = 0;
+    stretch_ratio_ = 1.0f;
+    stretch_recovering_ = false;
+    stretch_recover_remaining_seconds_ = 0.0f;
     eq_low_db_ = 0.0f;
     eq_mid_db_ = 0.0f;
     eq_high_db_ = 0.0f;
@@ -392,6 +395,28 @@ float Deck::duration() const {
 
 void Deck::set_stretch_ratio(float ratio) {
     stretch_ratio_ = utils::clamp(ratio, 0.5f, 2.0f);
+    stretch_recovering_ = false;
+    stretch_recover_remaining_seconds_ = 0.0f;
+}
+
+void Deck::start_stretch_recovery(float seconds) {
+    if (seconds <= 0.0f) {
+        stretch_ratio_ = 1.0f;
+        stretch_recovering_ = false;
+        stretch_recover_remaining_seconds_ = 0.0f;
+        return;
+    }
+    
+    float ratio = stretch_ratio_.load();
+    if (std::abs(ratio - 1.0f) <= 0.001f) {
+        stretch_ratio_ = 1.0f;
+        stretch_recovering_ = false;
+        stretch_recover_remaining_seconds_ = 0.0f;
+        return;
+    }
+    
+    stretch_recover_remaining_seconds_ = seconds;
+    stretch_recovering_ = true;
 }
 
 void Deck::set_volume(float volume) {
@@ -414,6 +439,33 @@ int Deck::render(float* output, int frames) {
     if (!playing_ || !loaded_) {
         std::memset(output, 0, frames * 2 * sizeof(float));
         return 0;
+    }
+    
+    // Smoothly return to 1.0x over configured seconds after transition.
+    if (stretch_recovering_) {
+        constexpr float kSampleRate = 44100.0f;
+        float ratio = stretch_ratio_.load();
+        float remaining = stretch_recover_remaining_seconds_.load();
+        
+        if (remaining <= 0.0f || std::abs(ratio - 1.0f) <= 0.001f) {
+            stretch_ratio_ = 1.0f;
+            stretch_recovering_ = false;
+            stretch_recover_remaining_seconds_ = 0.0f;
+        } else {
+            float dt = static_cast<float>(frames) / kSampleRate;
+            float alpha = utils::clamp(dt / remaining, 0.0f, 1.0f);
+            float new_ratio = ratio + (1.0f - ratio) * alpha;
+            
+            stretch_ratio_ = new_ratio;
+            remaining = std::max(0.0f, remaining - dt);
+            stretch_recover_remaining_seconds_ = remaining;
+            
+            if (remaining <= 0.0f) {
+                stretch_ratio_ = 1.0f;
+                stretch_recovering_ = false;
+                stretch_recover_remaining_seconds_ = 0.0f;
+            }
+        }
     }
     
     return impl_->render(output, frames, volume_, stretch_ratio_,

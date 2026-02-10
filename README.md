@@ -100,6 +100,9 @@ cmake --build .
 # 播放（macOS）
 ./automix-play --seed {start_track_id} --count {track_count} --random-seed {num}
 
+# 播放时设置变速回归时长（秒）
+./automix-play --seed {start_track_id} --stretch-recover 6
+
 # 快速检验过渡效果
 ./preview_transition.sh song1.mp3 song2.mp3 output.wav
 ```

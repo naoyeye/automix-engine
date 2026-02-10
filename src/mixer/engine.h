@@ -215,11 +215,11 @@ private:
     std::unique_ptr<Analyzer> analyzer_;
     std::unique_ptr<PlaylistGenerator> playlist_generator_;
     std::unique_ptr<Scheduler> scheduler_;
+    int sample_rate_{44100};
     std::unique_ptr<AudioOutput> audio_output_;
     
     TransitionConfig transition_config_;
     std::string last_error_;
-    int sample_rate_{44100};
 };
 
 } // namespace automix

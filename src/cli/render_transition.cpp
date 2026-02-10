@@ -113,6 +113,7 @@ int main(int argc, char* argv[]) {
     config.crossfade_beats = 16.0f;
     config.use_eq_swap = 0;
     config.stretch_limit = 0.06f;
+    config.stretch_recovery_seconds = 6.0f;
     automix_set_transition_config(engine, &config);
 
     if (automix_play(engine, playlist) != AUTOMIX_OK) {

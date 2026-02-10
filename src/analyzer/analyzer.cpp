@@ -134,7 +134,57 @@ public:
             
             delete rhythm;
             
-            if (bpm > 0) return bpm;
+            if (bpm > 0) {
+                auto octave_distance = [](float a, float b) -> float {
+                    if (a <= 0.0f || b <= 0.0f) return 1000.0f;
+                    return std::abs(std::log2(a / b));
+                };
+                
+                auto range_prior = [](float candidate) -> float {
+                    // Prefer beat-level tempo range while still allowing outliers.
+                    if (candidate >= 70.0f && candidate <= 150.0f) return 1.0f;
+                    if (candidate < 70.0f) return std::exp(-(70.0f - candidate) / 12.0f);
+                    return std::exp(-(candidate - 150.0f) / 18.0f);
+                };
+                
+                auto support_score = [&](float candidate) -> float {
+                    if (candidate <= 0.0f || estimates.empty()) return 0.0f;
+                    float score = 0.0f;
+                    for (auto e : estimates) {
+                        float est = static_cast<float>(e);
+                        if (est <= 0.0f) continue;
+                        score += std::exp(-8.0f * octave_distance(est, candidate));
+                    }
+                    return score;
+                };
+                
+                std::vector<float> candidates;
+                float raw_bpm = static_cast<float>(bpm);
+                candidates.push_back(raw_bpm);
+                if (raw_bpm * 0.5f >= 40.0f) candidates.push_back(raw_bpm * 0.5f);
+                if (raw_bpm * 2.0f <= 220.0f) candidates.push_back(raw_bpm * 2.0f);
+                
+                std::sort(candidates.begin(), candidates.end());
+                candidates.erase(
+                    std::unique(candidates.begin(), candidates.end(),
+                        [](float a, float b) { return std::abs(a - b) < 0.01f; }),
+                    candidates.end()
+                );
+                
+                float best_bpm = raw_bpm;
+                float best_score = -1.0f;
+                float conf = std::clamp(static_cast<float>(confidence), 0.1f, 1.0f);
+                for (float candidate : candidates) {
+                    float score = support_score(candidate) * conf
+                                + range_prior(candidate) * (1.2f - conf);
+                    if (score > best_score) {
+                        best_score = score;
+                        best_bpm = candidate;
+                    }
+                }
+                
+                return best_bpm;
+            }
             
         } catch (const std::exception& e) {
             // Fallback to internal detector if Essentia fails

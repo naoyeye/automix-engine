@@ -278,6 +278,9 @@ void Scheduler::poll() {
         current_index_++;
         state_ = PlaybackState::Playing;
         
+        // Smoothly recover incoming deck stretch back to normal speed.
+        active_deck_->start_stretch_recovery(transition_config_.stretch_recovery_seconds);
+        
         // Pre-load next track
         if (current_index_ + 1 < playlist_.size()) {
             load_track_to_deck(*next_deck_, playlist_.entries[current_index_ + 1].track_id);

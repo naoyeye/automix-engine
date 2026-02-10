@@ -67,6 +67,7 @@ typedef struct {
     float crossfade_beats;      /* Number of beats for crossfade (default: 16) */
     int use_eq_swap;            /* Use EQ-based transition */
     float stretch_limit;        /* Max time-stretch ratio (e.g., 0.06 for ±6%) */
+    float stretch_recovery_seconds; /* Seconds to smoothly return stretch to 1.0 after transition */
 } AutoMixTransitionConfig;
 
 /* Playback status callback */

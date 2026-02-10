@@ -316,6 +316,7 @@ void automix_set_transition_config(
     cpp_config.crossfade_beats = config->crossfade_beats;
     cpp_config.use_eq_swap = config->use_eq_swap != 0;
     cpp_config.stretch_limit = config->stretch_limit;
+    cpp_config.stretch_recovery_seconds = config->stretch_recovery_seconds;
     
     engine->engine->set_transition_config(cpp_config);
     engine->transition_config = cpp_config;
