@@ -550,20 +550,21 @@ void test_scheduler_previous() {
     // (2) Skip to next, then previous() back to track 1 (exercises previous when not at first track)
     sched.skip();
     sched.poll();
+    bool reached_track2 = false;
     for (int i = 0; i < 1000; i++) {
         sched.render(buf.data(), 512, kSampleRate);
         sched.poll();
-        if (sched.state() == PlaybackState::Playing && sched.current_track_id() == 2)
+        if (sched.state() == PlaybackState::Playing && sched.current_track_id() == 2) {
+            reached_track2 = true;
             break;
+        }
     }
-    if (sched.current_track_id() == 2) {
-        sched.previous();
-        sched.poll();
-        assert(sched.current_track_id() == 1);
-        assert(sched.state() == PlaybackState::Playing);
-    }
-    // If transition did not complete within 1000 iters, we still passed (1); (2) is best-effort
-    
+    assert(reached_track2 && "Scheduler did not reach track 2 within expected iterations");
+
+    sched.previous();
+    sched.poll();
+    assert(sched.current_track_id() == 1);
+    assert(sched.state() == PlaybackState::Playing);
     std::cout << "PASSED\n";
 }
 
