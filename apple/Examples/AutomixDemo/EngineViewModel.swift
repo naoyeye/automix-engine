@@ -48,71 +48,42 @@ class EngineViewModel: ObservableObject {
         pollTimer = nil
     }
     
-    /// 返回持久化数据库路径，并尝试从临时目录迁移已有数据库
+    /// 返回持久化数据库路径。优先级：AUTOMIX_DB 环境变量 > Application Support/Automix/automix.db
+    /// 与 CLI 工具（automix-scan、automix-playlist、automix-play）共用同一默认路径。
     private static func persistentDatabasePath() -> String {
+        if let envDb = ProcessInfo.processInfo.environment["AUTOMIX_DB"], !envDb.isEmpty {
+            return envDb
+        }
         let fileManager = FileManager.default
         guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return fileManager.temporaryDirectory.appendingPathComponent("automix.db").path
         }
-        let automixDir = appSupport.appendingPathComponent("AutomixDemo", isDirectory: true)
+        let automixDir = appSupport.appendingPathComponent("Automix", isDirectory: true)
         try? fileManager.createDirectory(at: automixDir, withIntermediateDirectories: true)
-        let destPath = automixDir.appendingPathComponent("automix.db").path
-        
-        // 1. 优先从项目根目录（当前工作目录）迁移，便于与 automix-scan/playlist 共用
-        migrateFromProjectRootIfNeeded(fileManager: fileManager, destination: destPath, destDir: automixDir)
-        // 2. 尝试从标准临时目录迁移已有数据库
-        migrateFromTempIfNeeded(fileManager: fileManager, destination: destPath)
-        
-        return destPath
+        return automixDir.appendingPathComponent("automix.db").path
     }
-    
-    /// 从项目根目录（当前工作目录）迁移 automix.db 及 SQLite 相关文件
-    private static func migrateFromProjectRootIfNeeded(fileManager: FileManager, destination: String, destDir: URL) {
-        let projectRoot = URL(fileURLWithPath: fileManager.currentDirectoryPath)
-        let srcDb = projectRoot.appendingPathComponent("automix.db")
-        guard migrateFile(from: srcDb.path, to: destination, fileManager: fileManager) else { return }
-        // 迁移 SQLite 辅助文件（-journal, -shm, -wal）
-        let auxSuffixes = ["-journal", "-shm", "-wal"]
-        for suffix in auxSuffixes {
-            let srcAux = projectRoot.appendingPathComponent("automix.db\(suffix)")
-            let dstAux = destDir.appendingPathComponent("automix.db\(suffix)")
-            if fileManager.fileExists(atPath: srcAux.path) {
-                try? fileManager.removeItem(atPath: dstAux.path)
-                try? fileManager.copyItem(atPath: srcAux.path, toPath: dstAux.path)
-            }
-        }
+
+    /// 共享播放列表文件路径（与 CLI 一致，与数据库同目录）
+    private static func sharedPlaylistPathFor(dbPath: String) -> String {
+        let url = URL(fileURLWithPath: dbPath)
+        return url.deletingLastPathComponent().appendingPathComponent("automix_playlist.txt").path
     }
-    
-    /// 在标准临时目录中查找 automix.db，若存在且非空则复制到目标路径（含辅助文件）
-    private static func migrateFromTempIfNeeded(fileManager: FileManager, destination: String) {
-        let tempDir = fileManager.temporaryDirectory
-        let tempDb = tempDir.appendingPathComponent("automix.db")
-        guard migrateFile(from: tempDb.path, to: destination, fileManager: fileManager) else { return }
-        let destDir = URL(fileURLWithPath: destination).deletingLastPathComponent()
-        let auxSuffixes = ["-journal", "-shm", "-wal"]
-        for suffix in auxSuffixes {
-            let srcAux = tempDir.appendingPathComponent("automix.db\(suffix)")
-            let dstAux = destDir.appendingPathComponent("automix.db\(suffix)")
-            if fileManager.fileExists(atPath: srcAux.path) {
-                try? fileManager.removeItem(atPath: dstAux.path)
-                try? fileManager.copyItem(atPath: srcAux.path, toPath: dstAux.path)
-            }
-        }
+
+    /// 从共享文件加载播放列表（CLI 生成后 Demo 可读取）
+    private static func loadSharedPlaylist(dbPath: String) -> [Int64]? {
+        let path = sharedPlaylistPathFor(dbPath: dbPath)
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let ids = content
+            .split(separator: "\n")
+            .compactMap { line -> Int64? in Int64(line.trimmingCharacters(in: .whitespaces)) }
+        return ids.isEmpty ? nil : ids
     }
-    
-    /// 若源文件存在且非空，则复制到目标；若目标已有有效数据则不覆盖。返回是否已迁移。
-    private static func migrateFile(from src: String, to dst: String, fileManager: FileManager) -> Bool {
-        guard fileManager.fileExists(atPath: src) else { return false }
-        guard let attrs = try? fileManager.attributesOfItem(atPath: src),
-              let size = attrs[.size] as? Int64, size > 0 else { return false }
-        if fileManager.fileExists(atPath: dst),
-           let dstAttrs = try? fileManager.attributesOfItem(atPath: dst),
-           let dstSize = dstAttrs[.size] as? Int64, dstSize > 0 {
-            return false
-        }
-        if fileManager.fileExists(atPath: dst) { try? fileManager.removeItem(atPath: dst) }
-        guard (try? fileManager.copyItem(atPath: src, toPath: dst)) != nil else { return false }
-        return fileManager.fileExists(atPath: dst)
+
+    /// 保存播放列表到共享文件（Demo 创建后 CLI 也可读取）
+    private static func saveSharedPlaylist(dbPath: String, trackIds: [Int64]) {
+        let path = sharedPlaylistPathFor(dbPath: dbPath)
+        let content = trackIds.map { String($0) }.joined(separator: "\n")
+        try? content.write(toFile: path, atomically: true, encoding: .utf8)
     }
     
     func setupEngine() {
@@ -261,10 +232,20 @@ class EngineViewModel: ObservableObject {
             if isPlaying {
                 try engine.pause()
             } else {
-                // If stopped, we might need to play a playlist first
-                // For demo, let's try to generate a playlist if none playing
                 if engine.currentTrackId == 0 {
-                    // Generate random playlist
+                    let dbPath = Self.persistentDatabasePath()
+
+                    // 1. 优先使用 CLI 保存的共享播放列表（与 automix-playlist 一致）
+                    if let ids = Self.loadSharedPlaylist(dbPath: dbPath) {
+                        let playlist = try engine.createPlaylist(trackIds: ids)
+                        requestedPlaylistCount = ids.count
+                        playlistTrackIds = ids
+                        try engine.play(playlist: playlist)
+                        refreshCurrentTrackInfo(trackId: engine.currentTrackId)
+                        return
+                    }
+
+                    // 2. 无共享列表时，生成新列表并保存
                     let allTracks = try engine.searchTracks(pattern: "%")
                     if let seed = allTracks.first {
                         let playlistCount = 10
@@ -272,6 +253,7 @@ class EngineViewModel: ObservableObject {
                         requestedPlaylistCount = playlistCount
                         do {
                             playlistTrackIds = try playlist.getTrackIDs()
+                            Self.saveSharedPlaylist(dbPath: dbPath, trackIds: playlistTrackIds)
                         } catch {
                             playlistTrackIds = []
                         }
@@ -310,6 +292,26 @@ class EngineViewModel: ObservableObject {
         }
     }
     
+    /// 在 Demo 中创建播放列表并播放（与 CLI 的 --seed/--count 一致，会保存到共享文件）
+    func createAndPlayPlaylist(seedTrackId: Int64, count: Int) {
+        guard let engine = engine else { return }
+        guard engine.currentTrackId == 0 else {
+            statusMessage = "Stop first to create new playlist."
+            return
+        }
+        do {
+            let playlist = try engine.generatePlaylist(seedTrackId: seedTrackId, count: count)
+            let ids = (try? playlist.getTrackIDs()) ?? []
+            requestedPlaylistCount = count
+            playlistTrackIds = ids
+            Self.saveSharedPlaylist(dbPath: Self.persistentDatabasePath(), trackIds: ids)
+            try engine.play(playlist: playlist)
+            refreshCurrentTrackInfo(trackId: engine.currentTrackId)
+        } catch {
+            statusMessage = "Create playlist failed: \(error)"
+        }
+    }
+
     func previous() {
         guard let engine = engine else { return }
         let savedTrackId = currentTrackId

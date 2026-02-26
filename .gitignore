@@ -11,6 +11,7 @@ automix.db
 automix.db-journal
 automix.db-shm
 automix.db-wal
+automix_playlist.txt
 
 # const files
 keys.json

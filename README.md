@@ -85,11 +85,40 @@ cmake --build .
 
 ## 使用
 
+### 数据库路径
+
+CLI 工具与 Demo 共用同一套数据库路径规则，便于扫描与播放数据一致：
+
+| 优先级 | 来源 | 说明 |
+|-------|------|------|
+| 1 | `-d` / `--database` | CLI 命令行参数（仅 CLI） |
+| 2 | `AUTOMIX_DB` 环境变量 | 两者均支持 |
+| 3 | 平台默认路径 | 见下表 |
+
+**默认路径**：
+
+| 平台 | 默认路径 |
+|------|----------|
+| macOS | `~/Library/Application Support/Automix/automix.db` |
+| Linux | `~/.local/share/automix/automix.db`（或 `$XDG_DATA_HOME/automix/automix.db`） |
+
+**共享播放列表**：CLI 生成播放列表时会保存到 `automix_playlist.txt`（与数据库同目录）。Demo 播放时优先读取该文件，实现 CLI 与 Demo 播放列表一致。Demo 也可在界面中创建播放列表（指定 seed 和 count），同样会保存到共享文件。
+
+设置 `AUTOMIX_DB` 可指定自定义数据库路径，例如：
+
+```bash
+export AUTOMIX_DB=/path/to/my/automix.db
+./automix-scan /path/to/music
+```
+
 ### CLI 工具
 
 ```bash
-# 扫描音乐目录
+# 扫描音乐目录（使用默认数据库路径）
 ./automix-scan /path/to/music
+
+# 指定数据库路径
+./automix-scan -d ./automix.db /path/to/music
 
 # 列出曲库
 ./automix-playlist --list
@@ -119,8 +148,10 @@ cmake --build .
 # 编译
 cd cmake-build && make automix-render-transition
 
-# 使用 (通常通过脚本调用)
-./automix-render-transition automix.db {track_id_1} {track_id_2} output.wav
+# 使用 (通常通过脚本调用，数据库路径需显式指定)
+./automix-render-transition <db_path> {track_id_1} {track_id_2} output.wav
+# 例如使用默认数据库：
+./automix-render-transition ~/Library/Application\ Support/Automix/automix.db 1 2 output.wav
 ```
 
 **2. 一键预览脚本 (`preview_transition.sh`)**
@@ -185,9 +216,7 @@ swift run AutomixDemo
 | 上一首/下一首 | 在播放列表中切换曲目，支持无缝过渡 |
 | 状态显示 | 显示当前曲目名称/艺术家/封面、播放进度及在播放列表中的位置等 |
 
-**注意**：Demo 将数据库持久化到 `~/Library/Application Support/AutomixDemo/automix.db`。首次启动时，会按以下顺序尝试迁移已有数据库（含 `automix.db`、`automix.db-journal`、`automix.db-shm`、`automix.db-wal`）：1）项目根目录（当前工作目录，便于与 `automix-scan`/`automix-playlist` 共用）；2）`/var/folders` 下的临时目录。
-
-从 Xcode 或 Finder 直接启动时，当前工作目录可能不是项目根，迁移可能不会执行。若需复用已有 `automix.db`，建议先在项目根目录用 `swift run AutomixDemo` 启动一次完成迁移，再以其他方式启动。
+**注意**：Demo 与 CLI 共用同一默认数据库路径（见上文「数据库路径」）。未设置 `AUTOMIX_DB` 时，数据保存在 `~/Library/Application Support/Automix/automix.db`。
 
 ### Swift 集成 (macOS/iOS)
 

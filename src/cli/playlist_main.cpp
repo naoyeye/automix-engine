@@ -7,20 +7,20 @@
  */
 
 #include "automix/automix.h"
+#include "db_path.h"
 #include <iostream>
 #include <string>
 #include <cstring>
 #include <cstdlib>
 
 void print_usage(const char* program) {
-    std::string default_db = "automix.db";
-#ifdef AUTOMIX_DEFAULT_DB_PATH
-    default_db = AUTOMIX_DEFAULT_DB_PATH;
+    std::string default_hint = "AUTOMIX_DB or ~/Library/Application Support/Automix/automix.db";
+#ifdef __linux__
+    default_hint = "AUTOMIX_DB or ~/.local/share/automix/automix.db";
 #endif
-
     std::cerr << "Usage: " << program << " [options] --seed <track_id>\n"
               << "\nOptions:\n"
-              << "  -d, --database <path>  Database file path (default: " << default_db << ")\n"
+              << "  -d, --database <path>  Database file path (default: " << default_hint << ")\n"
               << "  -s, --seed <id>        Seed track ID (required)\n"
               << "  -c, --count <n>        Number of tracks (default: 10)\n"
               << "  -r, --random-seed <n>  Random seed for reproducible playlists (0 = random)\n"
@@ -52,11 +52,7 @@ void list_tracks(AutoMixEngine* engine) {
 }
 
 int main(int argc, char* argv[]) {
-#ifdef AUTOMIX_DEFAULT_DB_PATH
-    std::string db_path = AUTOMIX_DEFAULT_DB_PATH;
-#else
-    std::string db_path = "automix.db";
-#endif
+    std::string db_path_arg;  // From -d, empty if not specified
     int64_t seed_id = -1;
     int count = 10;
     uint32_t random_seed = 0;
@@ -69,7 +65,7 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--database") == 0) {
             if (i + 1 < argc) {
-                db_path = argv[++i];
+                db_path_arg = argv[++i];
             }
         } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--seed") == 0) {
             if (i + 1 < argc) {
@@ -87,6 +83,8 @@ int main(int argc, char* argv[]) {
             list_only = true;
         }
     }
+    
+    std::string db_path = automix::cli::resolve_db_path(db_path_arg);
     
     // Create engine
     AutoMixEngine* engine = automix_create(db_path.c_str());
@@ -132,8 +130,10 @@ int main(int argc, char* argv[]) {
     int track_count = 0;
     
     if (automix_playlist_get_tracks(playlist, &track_ids, &track_count) == AUTOMIX_OK) {
+        automix::cli::save_playlist(db_path, track_ids, track_count);
+
         std::cout << "Generated playlist with " << track_count << " tracks:\n\n";
-        
+
         for (int i = 0; i < track_count; ++i) {
             AutoMixTrackInfo info;
             if (automix_get_track_info(engine, track_ids[i], &info) == AUTOMIX_OK) {
@@ -143,7 +143,7 @@ int main(int argc, char* argv[]) {
                 free((void*)info.key);
             }
         }
-        
+
         delete[] track_ids;
     }
     

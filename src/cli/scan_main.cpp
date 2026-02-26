@@ -7,19 +7,19 @@
  */
 
 #include "automix/automix.h"
+#include "db_path.h"
 #include <iostream>
 #include <string>
 #include <cstring>
 
 void print_usage(const char* program) {
-    std::string default_db = "automix.db";
-#ifdef AUTOMIX_DEFAULT_DB_PATH
-    default_db = AUTOMIX_DEFAULT_DB_PATH;
+    std::string default_hint = "AUTOMIX_DB or ~/Library/Application Support/Automix/automix.db";
+#ifdef __linux__
+    default_hint = "AUTOMIX_DB or ~/.local/share/automix/automix.db";
 #endif
-
     std::cerr << "Usage: " << program << " [options] <music_directory>\n"
               << "\nOptions:\n"
-              << "  -d, --database <path>  Database file path (default: " << default_db << ")\n"
+              << "  -d, --database <path>  Database file path (default: " << default_hint << ")\n"
               << "  -r, --recursive        Scan subdirectories (default: true)\n"
               << "  -n, --no-recursive     Don't scan subdirectories\n"
               << "  -h, --help             Show this help\n";
@@ -34,11 +34,7 @@ void scan_callback(const char* file, int processed, int total, void* user_data) 
 }
 
 int main(int argc, char* argv[]) {
-#ifdef AUTOMIX_DEFAULT_DB_PATH
-    std::string db_path = AUTOMIX_DEFAULT_DB_PATH;
-#else
-    std::string db_path = "automix.db";
-#endif
+    std::string db_path_arg;  // From -d, empty if not specified
     std::string music_dir;
     bool recursive = true;
     
@@ -49,7 +45,7 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--database") == 0) {
             if (i + 1 < argc) {
-                db_path = argv[++i];
+                db_path_arg = argv[++i];
             } else {
                 std::cerr << "Error: -d requires a path argument\n";
                 return 1;
@@ -72,6 +68,8 @@ int main(int argc, char* argv[]) {
         print_usage(argv[0]);
         return 1;
     }
+    
+    std::string db_path = automix::cli::resolve_db_path(db_path_arg);
     
     // Create engine
     AutoMixEngine* engine = automix_create(db_path.c_str());

@@ -36,6 +36,8 @@ cd /workspace/cmake-build && ctest --output-on-failure
 | `automix-play --seed <id>` | Real-time playback (macOS only, requires CoreAudio) |
 | `automix-render-transition <db> <id1> <id2> <out.wav>` | Offline render a transition |
 
+**Database path**: CLI and Demo share the same default: `AUTOMIX_DB` env > platform default (macOS: `~/Library/Application Support/Automix/automix.db`, Linux: `~/.local/share/automix/automix.db`). Use `-d` to override for CLI.
+
 ### Dependencies (pre-installed)
 
 All required system dependencies are pre-installed on the VM:

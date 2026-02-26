@@ -3,6 +3,8 @@ import Automix
 
 struct ContentView: View {
     @StateObject private var viewModel = EngineViewModel()
+    @State private var createSeedText = "5"
+    @State private var createCount = 10
     
     var body: some View {
         VStack(spacing: 20) {
@@ -70,6 +72,30 @@ struct ContentView: View {
                 }
                 .disabled(viewModel.isScanning)
                 .buttonStyle(.borderedProminent)
+
+                // 创建播放列表（与 CLI automix-playlist 一致）
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Create Playlist")
+                            .font(.headline)
+                        HStack {
+                            Text("Seed track ID:")
+                            TextField("e.g. 5", text: $createSeedText)
+                                .frame(width: 60)
+                            Text("Count:")
+                            Stepper(value: $createCount, in: 5...50) {
+                                Text("\(createCount)")
+                            }
+                        }
+                        Button("Create & Play") {
+                            if let seed = Int64(createSeedText) {
+                                viewModel.createAndPlayPlaylist(seedTrackId: seed, count: createCount)
+                            }
+                        }
+                        .disabled(viewModel.trackCount == 0 || viewModel.isPlaying)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding()
         }
