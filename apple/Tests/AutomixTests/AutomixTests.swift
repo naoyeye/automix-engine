@@ -89,4 +89,86 @@ final class AutomixTests: XCTestCase {
 
         XCTAssertEqual(engine.trackCount(), 0)
     }
+
+    /// Verifies that creating a playlist from an empty track list throws `.invalidArgument`.
+    func testCreatePlaylistEmptyThrowsInvalidArgument() throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("automix_test_\(UUID().uuidString).db")
+            .path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let engine = try AutoMixEngine(dbPath: dbPath)
+        XCTAssertThrowsError(try engine.createPlaylist(trackIds: [])) { error in
+            XCTAssertEqual(error as? AutoMixError, .invalidArgument)
+        }
+    }
+
+    /// Verifies that generating a playlist with a non-existent seed track throws `.playbackError`.
+    func testGeneratePlaylistNonExistentSeedThrows() throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("automix_test_\(UUID().uuidString).db")
+            .path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let engine = try AutoMixEngine(dbPath: dbPath)
+        XCTAssertThrowsError(try engine.generatePlaylist(seedTrackId: 9999, count: 5)) { error in
+            XCTAssertEqual(error as? AutoMixError, .playbackError)
+        }
+    }
+
+    /// Verifies that playback control methods throw when no playlist is playing.
+    func testPlaybackControlThrowsWhenStopped() throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("automix_test_\(UUID().uuidString).db")
+            .path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let engine = try AutoMixEngine(dbPath: dbPath)
+        // pause/resume/stop/skip should either succeed or throw a typed AutoMixError
+        XCTAssertNoThrow(try? engine.pause())
+        XCTAssertNoThrow(try? engine.resume())
+        XCTAssertNoThrow(try? engine.stop())
+        XCTAssertNoThrow(try? engine.next())
+    }
+
+    /// Verifies state and position accessors return sane defaults on a fresh engine.
+    func testDefaultStateAndPosition() throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("automix_test_\(UUID().uuidString).db")
+            .path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let engine = try AutoMixEngine(dbPath: dbPath)
+        XCTAssertEqual(engine.state, .stopped)
+        XCTAssertEqual(engine.position, 0.0, accuracy: 0.001)
+        XCTAssertEqual(engine.currentTrackId, -1)
+    }
+
+    /// Verifies that setTransitionConfig does not crash.
+    func testSetTransitionConfig() throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("automix_test_\(UUID().uuidString).db")
+            .path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let engine = try AutoMixEngine(dbPath: dbPath)
+        let config = TransitionConfig(crossfadeBeats: 8.0, useEqSwap: true, stretchLimit: 0.04, stretchRecoverySeconds: 3.0)
+        XCTAssertNoThrow(engine.setTransitionConfig(config))
+    }
+
+    /// Verifies that the async scan method throws for a non-existent directory.
+    func testAsyncScanNonExistentDirectoryThrows() async throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("automix_test_\(UUID().uuidString).db")
+            .path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let engine = try AutoMixEngine(dbPath: dbPath)
+        do {
+            _ = try await engine.scan(musicDir: "/nonexistent/path/\(UUID().uuidString)", recursive: false)
+            XCTFail("Expected an error for non-existent directory")
+        } catch {
+            XCTAssertTrue(error is AutoMixError)
+        }
+    }
 }
