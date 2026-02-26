@@ -114,27 +114,38 @@ void Scheduler::stop() {
     notify_status();
 }
 
-void Scheduler::skip() {
+bool Scheduler::skip() {
+    if (transitioning_) {
+        return false;
+    }
     if (current_index_ + 1 >= playlist_.size()) {
         stop();
-        return;
+        return true;
     }
     
-    // Signal the control thread to start a transition
     skip_requested_ = true;
+    return true;
 }
 
-void Scheduler::previous() {
+bool Scheduler::previous() {
+    if (transitioning_) {
+        return false;
+    }
     if (playlist_.empty() || state_ == PlaybackState::Stopped) {
-        return;
+        return false;
     }
     previous_requested_ = true;
+    return true;
 }
 
-void Scheduler::seek(float position) {
+bool Scheduler::seek(float position) {
+    if (transitioning_) {
+        return false;
+    }
     if (active_deck_->is_loaded()) {
         active_deck_->seek(position);
     }
+    return true;
 }
 
 float Scheduler::position() const {

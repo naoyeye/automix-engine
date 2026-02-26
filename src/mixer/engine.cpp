@@ -260,16 +260,16 @@ void Engine::stop() {
     stop_audio();
 }
 
-void Engine::skip() {
-    scheduler_->skip();
+bool Engine::skip() {
+    return scheduler_->skip();
 }
 
-void Engine::previous() {
-    scheduler_->previous();
+bool Engine::previous() {
+    return scheduler_->previous();
 }
 
-void Engine::seek(float position) {
-    scheduler_->seek(position);
+bool Engine::seek(float position) {
+    return scheduler_->seek(position);
 }
 
 PlaybackState Engine::playback_state() const {

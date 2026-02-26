@@ -368,19 +368,19 @@ AutoMixError automix_stop(AutoMixEngine* engine) {
 
 AutoMixError automix_skip(AutoMixEngine* engine) {
     if (!engine || !engine->engine) return AUTOMIX_ERROR_INVALID_ARGUMENT;
-    engine->engine->skip();
+    if (!engine->engine->skip()) return AUTOMIX_ERROR_TRANSITIONING;
     return AUTOMIX_OK;
 }
 
 AutoMixError automix_previous(AutoMixEngine* engine) {
     if (!engine || !engine->engine) return AUTOMIX_ERROR_INVALID_ARGUMENT;
-    engine->engine->previous();
+    if (!engine->engine->previous()) return AUTOMIX_ERROR_TRANSITIONING;
     return AUTOMIX_OK;
 }
 
 AutoMixError automix_seek(AutoMixEngine* engine, float position_seconds) {
     if (!engine || !engine->engine) return AUTOMIX_ERROR_INVALID_ARGUMENT;
-    engine->engine->seek(position_seconds);
+    if (!engine->engine->seek(position_seconds)) return AUTOMIX_ERROR_TRANSITIONING;
     return AUTOMIX_OK;
 }
 

@@ -137,7 +137,7 @@ struct ContentView: View {
                 Image(systemName: "backward.fill")
                     .font(.title)
             }
-            .disabled(viewModel.currentTrackId == 0)
+            .disabled(viewModel.currentTrackId == 0 || viewModel.isTransitioning)
             .buttonStyle(InteractiveButtonStyle())
             .pointingHandCursor()
             .accessibilityLabel("Previous track")
@@ -165,7 +165,7 @@ struct ContentView: View {
                 Image(systemName: "forward.fill")
                     .font(.title)
             }
-            .disabled(viewModel.currentTrackId == 0)
+            .disabled(viewModel.currentTrackId == 0 || viewModel.isTransitioning)
             .buttonStyle(InteractiveButtonStyle())
             .pointingHandCursor()
             .accessibilityLabel("Next track")

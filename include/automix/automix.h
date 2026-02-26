@@ -32,6 +32,7 @@ typedef enum {
     AUTOMIX_ERROR_PLAYBACK_ERROR = -6,
     AUTOMIX_ERROR_OUT_OF_MEMORY = -7,
     AUTOMIX_ERROR_NOT_INITIALIZED = -8,
+    AUTOMIX_ERROR_TRANSITIONING = -9,
 } AutoMixError;
 
 typedef enum {

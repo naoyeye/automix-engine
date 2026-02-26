@@ -447,11 +447,21 @@ class EngineViewModel: ObservableObject {
     }
     
     func next() {
-        guard let engine = engine else { return }
+        guard let engine = engine, !isTransitioning else { return }
         do {
             try engine.next()
         } catch {
             statusMessage = "Next failed: \(error)"
+        }
+    }
+    
+    func seek(to seconds: Float) {
+        guard let engine = engine, !isTransitioning else { return }
+        do {
+            try engine.seek(seconds: seconds)
+            position = seconds
+        } catch {
+            statusMessage = "Seek failed: \(error)"
         }
     }
     
@@ -476,7 +486,7 @@ class EngineViewModel: ObservableObject {
     }
 
     func previous() {
-        guard let engine = engine else { return }
+        guard let engine = engine, !isTransitioning else { return }
         do {
             try engine.previous()
         } catch {
