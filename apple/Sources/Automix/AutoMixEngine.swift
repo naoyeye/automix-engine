@@ -9,17 +9,29 @@ import Foundation
 import CAutomix
 import Combine
 
-/// Represents the current status of the AutoMix engine.
+/// Snapshot of the current playback status of the AutoMix engine.
+///
+/// Instances of this type are produced by the underlying C `AutoMixEngine` via
+/// `automix_set_status_callback` and are emitted to clients through
+/// ``AutoMixEngine/statusPublisher`` and ``AutoMixEngine/statusStream`` whenever
+/// the playback state changes, the playback position advances, or the current/next
+/// track changes.
 public struct AutoMixStatus {
+    /// The current high-level playback state of the engine (for example, playing or paused).
     public let state: AutoMixPlaybackState
+    /// Identifier of the track that is currently playing.
+    ///
+    /// Depending on engine semantics, a value of `-1` indicates no track is active.
     public let currentTrackId: Int64
+    /// Current playback position within the active track, in seconds.
     public let position: Float
+    /// Identifier of the track scheduled to play next.
     public let nextTrackId: Int64
 }
 
 /// The core engine class of the Swift wrapper. Manages the lifecycle of the underlying
 /// C `AutoMixEngine` instance, library scanning, playlist generation, and audio control.
-public class AutoMixEngine: @unchecked Sendable {
+public class AutoMixEngine {
     
     // MARK: - Internal Properties
     
@@ -145,33 +157,45 @@ public class AutoMixEngine: @unchecked Sendable {
         }
     }
     
-    /// Async version of scan.
+    /// Async version of scan without progress reporting.
     public func scan(musicDir: String, recursive: Bool) async throws -> Int {
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let result = try self.scan(musicDir: musicDir, recursive: recursive, progress: nil)
-                    continuation.resume(returning: result)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        return try await Task.detached(priority: .userInitiated) {
+            try self.scan(musicDir: musicDir, recursive: recursive, progress: nil)
+        }.value
     }
     
-    /// Async version of scan with progress stream.
-    public func scan(musicDir: String, recursive: Bool) -> AsyncThrowingStream<(String, Int, Int), Error> {
+    /// Async version of scan with a progress stream.
+    ///
+    /// Yields `(currentFilePath, filesProcessed, totalFiles)` tuples as scanning progresses.
+    /// Supports cooperative cancellation: finishing or cancelling the iteration stops the background scan.
+    public func scanProgressStream(musicDir: String, recursive: Bool) -> AsyncThrowingStream<(String, Int, Int), Error> {
         return AsyncThrowingStream { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            // Wrap the background work in a DispatchWorkItem so it can be cancelled.
+            var workItem: DispatchWorkItem!
+            workItem = DispatchWorkItem {
+                if workItem.isCancelled {
+                    continuation.finish()
+                    return
+                }
                 do {
                     _ = try self.scan(musicDir: musicDir, recursive: recursive) { file, processed, total in
+                        if workItem.isCancelled { return }
                         continuation.yield((file, processed, total))
                     }
-                    continuation.finish()
+                    if !workItem.isCancelled {
+                        continuation.finish()
+                    }
                 } catch {
-                    continuation.finish(throwing: error)
+                    if !workItem.isCancelled {
+                        continuation.finish(throwing: error)
+                    }
                 }
             }
+            // When the consumer cancels or the stream is finished, cancel the background work.
+            continuation.onTermination = { @Sendable _ in
+                workItem.cancel()
+            }
+            DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
         }
     }
     
@@ -202,9 +226,6 @@ public class AutoMixEngine: @unchecked Sendable {
             throw AutoMixError.from(code: result.rawValue)
         }
         
-        let path = cInfo.path.map { String(cString: $0) } ?? ""
-        let key = cInfo.key.map { String(cString: $0) } ?? ""
-        
         defer {
             if let ptr = cInfo.path {
                 free(UnsafeMutablePointer(mutating: ptr))
@@ -213,6 +234,9 @@ public class AutoMixEngine: @unchecked Sendable {
                 free(UnsafeMutablePointer(mutating: ptr))
             }
         }
+        
+        let path = cInfo.path.map { String(cString: $0) } ?? ""
+        let key = cInfo.key.map { String(cString: $0) } ?? ""
         
         return TrackInfo(
             id: cInfo.id,
@@ -303,7 +327,7 @@ public class AutoMixEngine: @unchecked Sendable {
         }
         
         guard let h = handle else {
-            throw AutoMixError.fileNotFound
+            throw AutoMixError.playbackError
         }
         return AutoMixPlaylist(handle: h)
     }
@@ -322,7 +346,7 @@ public class AutoMixEngine: @unchecked Sendable {
         }
         
         guard let h = handle else {
-            throw AutoMixError.fileNotFound
+            throw AutoMixError.invalidArgument
         }
         return AutoMixPlaylist(handle: h)
     }

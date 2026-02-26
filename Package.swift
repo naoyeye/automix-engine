@@ -27,7 +27,7 @@ let package = Package(
             dependencies: ["CAutomix"],
             path: "apple/Sources/Automix",
             linkerSettings: [
-                .unsafeFlags(["-L", "cmake-build", "-L", "/opt/homebrew/lib", "-L", "/usr/local/lib"]),
+                .unsafeFlags(["-L", "cmake-build"]),
                 .linkedLibrary("automix"),
                 .linkedLibrary("avformat"),
                 .linkedLibrary("avcodec"),

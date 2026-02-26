@@ -79,17 +79,18 @@ class EngineViewModel: ObservableObject {
         
         Task {
             do {
-                for try await (file, processed, total) in engine.scan(musicDir: path, recursive: true) {
+                for try await (file, processed, total) in engine.scanProgressStream(musicDir: path, recursive: true) {
                     await MainActor.run {
                         self.scannedTracks = processed
                         self.totalTracksToScan = total
                         self.statusMessage = "Scanning: \(processed)/\(total) - \(URL(fileURLWithPath: file).lastPathComponent)"
                     }
                 }
+                let trackCount = engine.trackCount()
                 await MainActor.run {
                     self.isScanning = false
                     self.statusMessage = "Scan complete. Total tracks: \(self.scannedTracks)"
-                    self.trackCount = engine.trackCount()
+                    self.trackCount = trackCount
                 }
             } catch {
                 await MainActor.run {

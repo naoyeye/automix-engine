@@ -158,7 +158,17 @@ AutoMixError automix_get_track_info(
 
 /**
  * Search tracks by path pattern.
- * Caller must free the returned array with automix_free_track_ids().
+ *
+ * On success:
+ *   - If *out_count > 0, *out_ids will point to a dynamically allocated
+ *     array of track IDs, and the caller must free it with
+ *     automix_free_track_ids().
+ *   - If *out_count == 0, *out_ids will be set to NULL and there is
+ *     nothing to free.
+ *
+ * On error (return value != AUTOMIX_OK), *out_ids is set to NULL and
+ * *out_count is set to 0; in this case the caller must not call
+ * automix_free_track_ids() on *out_ids.
  * 
  * @param engine Engine instance
  * @param pattern SQL LIKE pattern (e.g., "%artist%")
