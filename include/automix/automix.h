@@ -251,6 +251,11 @@ AutoMixError automix_stop(AutoMixEngine* engine);
 AutoMixError automix_skip(AutoMixEngine* engine);
 
 /**
+ * Go to previous track (or restart current track from beginning if at first track).
+ */
+AutoMixError automix_previous(AutoMixEngine* engine);
+
+/**
  * Seek within current track.
  */
 AutoMixError automix_seek(AutoMixEngine* engine, float position_seconds);

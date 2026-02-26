@@ -502,6 +502,125 @@ void test_scheduler_skip() {
     std::cout << "PASSED\n";
 }
 
+void test_scheduler_previous() {
+    std::cout << "Test: Scheduler previous... ";
+    
+    g_test_tracks.clear();
+    g_test_tracks.push_back(make_sine(440.0f, 2.0f));
+    g_test_tracks.push_back(make_sine(880.0f, 2.0f));
+    g_test_tracks.push_back(make_sine(660.0f, 2.0f));
+    
+    Scheduler sched;
+    sched.set_track_loader(test_track_loader);
+    
+    TransitionConfig config;
+    config.crossfade_beats = 2.0f;
+    config.max_transition_seconds = 0.5f;
+    sched.set_transition_config(config);
+    
+    TransitionPlan plan;
+    plan.from_track_id = 1;
+    plan.to_track_id = 2;
+    plan.out_point.time_seconds = 1.5f;
+    plan.in_point.time_seconds = 0.0f;
+    plan.crossfade_duration = 0.2f;
+    plan.bpm_stretch_ratio = 1.0f;
+    
+    Playlist playlist;
+    playlist.entries.push_back({1, plan});
+    playlist.entries.push_back({2, std::nullopt});
+    playlist.entries.push_back({3, std::nullopt});
+    
+    sched.load_playlist(playlist);
+    sched.play();
+    assert(sched.current_track_id() == 1);
+    
+    std::vector<float> buf(512 * 2, 0.0f);
+    
+    // (1) At first track: previous() restarts current track (seek to 0)
+    for (int i = 0; i < 20; i++) {
+        sched.render(buf.data(), 512, kSampleRate);
+    }
+    assert(sched.position() > 0.0f);
+    sched.previous();
+    sched.poll();
+    assert(sched.current_track_id() == 1);
+    assert(sched.position() < 0.1f);  // restarted from beginning (or near it)
+    
+    // (2) Skip to next, then previous() back to track 1 (exercises previous when not at first track)
+    sched.skip();
+    sched.poll();
+    bool reached_track2 = false;
+    for (int i = 0; i < 1000; i++) {
+        sched.render(buf.data(), 512, kSampleRate);
+        sched.poll();
+        if (sched.state() == PlaybackState::Playing && sched.current_track_id() == 2) {
+            reached_track2 = true;
+            break;
+        }
+    }
+    assert(reached_track2 && "Scheduler did not reach track 2 within expected iterations");
+
+    sched.previous();
+    sched.poll();
+    assert(sched.current_track_id() == 1);
+    assert(sched.state() == PlaybackState::Playing);
+
+    // (3) At first track while transition is in progress: previous() must cancel
+    //     the transition and restart the track (not let the deck swap complete).
+    {
+        g_test_tracks.clear();
+        g_test_tracks.push_back(make_sine(440.0f, 2.0f));
+        g_test_tracks.push_back(make_sine(880.0f, 2.0f));
+
+        Scheduler sched2;
+        sched2.set_track_loader(test_track_loader);
+
+        TransitionConfig cfg2;
+        cfg2.crossfade_beats = 2.0f;
+        cfg2.max_transition_seconds = 0.5f;
+        sched2.set_transition_config(cfg2);
+
+        TransitionPlan plan2;
+        plan2.from_track_id = 1;
+        plan2.to_track_id = 2;
+        plan2.out_point.time_seconds = 1.5f;
+        plan2.in_point.time_seconds = 0.0f;
+        plan2.crossfade_duration = 0.5f;  // longer crossfade so it is still in progress
+        plan2.bpm_stretch_ratio = 1.0f;
+
+        Playlist pl2;
+        pl2.entries.push_back({1, plan2});
+        pl2.entries.push_back({2, std::nullopt});
+
+        sched2.load_playlist(pl2);
+        sched2.play();
+        assert(sched2.current_track_id() == 1);
+
+        // Advance past the transition trigger point (out_point at 1.5 s)
+        int trigger_frames = static_cast<int>(1.6f * kSampleRate);
+        int rendered = 0;
+        while (rendered < trigger_frames) {
+            int chunk = std::min(512, trigger_frames - rendered);
+            sched2.render(buf.data(), chunk, kSampleRate);
+            sched2.poll();
+            rendered += chunk;
+        }
+        // The transition should have started; call previous() immediately to cancel it
+        sched2.previous();
+        sched2.poll();
+
+        // The deck must NOT have swapped to track 2; track 1 must still be active
+        assert(sched2.current_track_id() == 1);
+        // The track must have been restarted from the beginning
+        assert(sched2.position() < 0.1f);
+        // Playback must still be running
+        assert(sched2.state() == PlaybackState::Playing);
+    }
+
+    std::cout << "PASSED\n";
+}
+
 void test_scheduler_render_prealloc() {
     std::cout << "Test: Scheduler pre-allocated buffers... ";
     
@@ -585,6 +704,7 @@ int main() {
     test_scheduler_basic_playback();
     test_scheduler_transition();
     test_scheduler_skip();
+    test_scheduler_previous();
     test_scheduler_render_prealloc();
     
     // Engine integration

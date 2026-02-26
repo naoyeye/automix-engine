@@ -105,6 +105,7 @@ void Scheduler::stop() {
     need_preload_next_ = false;
     need_status_notify_ = false;
     skip_requested_ = false;
+    previous_requested_ = false;
     
     crossfader_.stop_automation();
     crossfader_.set_position(-1.0f);
@@ -121,6 +122,13 @@ void Scheduler::skip() {
     
     // Signal the control thread to start a transition
     skip_requested_ = true;
+}
+
+void Scheduler::previous() {
+    if (playlist_.empty() || state_ == PlaybackState::Stopped) {
+        return;
+    }
+    previous_requested_ = true;
 }
 
 void Scheduler::seek(float position) {
@@ -253,6 +261,49 @@ void Scheduler::poll() {
     // Handle skip request
     if (skip_requested_.exchange(false)) {
         start_transition();
+    }
+    
+    // Handle previous request
+    if (previous_requested_.exchange(false)) {
+        if (current_index_ == 0) {
+            // Cancel any in-progress transition before restarting
+            transitioning_ = false;
+            transition_finished_.store(false);
+            transition_trigger_pending_.store(false);
+            playback_finished_.store(false);
+            crossfader_.stop_automation();
+            next_deck_->pause();
+            next_deck_->unload();
+            crossfader_.set_position(active_deck_ == deck_a_.get() ? -1.0f : 1.0f);
+            // Restart current track from beginning
+            if (active_deck_->is_loaded()) {
+                active_deck_->seek(0.0f);
+            }
+        } else {
+            // Go to previous track
+            transitioning_ = false;
+            transition_finished_.store(false);
+            transition_trigger_pending_.store(false);
+            playback_finished_.store(false);
+            crossfader_.stop_automation();
+            next_deck_->pause();
+            next_deck_->unload();
+            active_deck_->pause();
+            active_deck_->unload();
+            current_index_--;
+            if (load_track_to_deck(*active_deck_, playlist_.entries[current_index_].track_id)) {
+                active_deck_->play();
+                if (current_index_ + 1 < playlist_.size()) {
+                    load_track_to_deck(*next_deck_, playlist_.entries[current_index_ + 1].track_id);
+                }
+                crossfader_.set_position(active_deck_ == deck_a_.get() ? -1.0f : 1.0f);
+                state_ = PlaybackState::Playing;
+                notify_status();
+            } else {
+                // If loading the previous track fails, move scheduler to a clean stopped state.
+                stop();
+            }
+        }
     }
     
     // Handle transition trigger from audio thread
