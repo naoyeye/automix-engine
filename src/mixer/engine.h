@@ -215,6 +215,11 @@ public:
      * Get the underlying store.
      */
     Store& store() { return *store_; }
+
+    /**
+     * Get the underlying store (read-only).
+     */
+    const Store& store() const { return *store_; }
     
 private:
     // Track loader callback for scheduler
