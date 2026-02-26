@@ -287,6 +287,9 @@ void Scheduler::poll() {
                 crossfader_.set_position(active_deck_ == deck_a_.get() ? -1.0f : 1.0f);
                 state_ = PlaybackState::Playing;
                 notify_status();
+            } else {
+                // If loading the previous track fails, move scheduler to a clean stopped state.
+                stop();
             }
         }
     }

@@ -545,7 +545,7 @@ void test_scheduler_previous() {
     sched.previous();
     sched.poll();
     assert(sched.current_track_id() == 1);
-    assert(sched.position() >= 0.0f);  // restarted from beginning (or near it)
+    assert(sched.position() < 0.1f);  // restarted from beginning (or near it)
     
     // (2) Skip to next, then previous() back to track 1 (exercises previous when not at first track)
     sched.skip();
