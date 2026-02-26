@@ -2,7 +2,7 @@ import SwiftUI
 import Automix
 import AppKit
 
-let kMinWindowWidth: CGFloat = 580
+let kMinWindowWidth: CGFloat = 300
 let kMinWindowHeight: CGFloat = 500
 
 /// 配置窗口为透明，以便磨砂背景能透出桌面
@@ -84,6 +84,91 @@ private struct InteractiveButtonStyle: ButtonStyle {
     }
 }
 
+/// 可拖拽的播放进度条（全宽，5pt 高度，带圆形拖拽按钮）
+private struct PlaybackProgressBar: View {
+    let position: Float
+    let duration: Float
+    let isDisabled: Bool
+    let onSeek: (Float) -> Void
+    
+    @State private var isDragging = false
+    @State private var isHovering = false
+    @State private var dragFraction: CGFloat = 0
+    
+    private var fraction: CGFloat {
+        guard duration > 0 else { return 0 }
+        if isDragging { return clamped(dragFraction) }
+        return clamped(CGFloat(position / duration))
+    }
+    
+    private func clamped(_ v: CGFloat) -> CGFloat { min(max(v, 0), 1) }
+    
+    private var thumbDiameter: CGFloat {
+        if isDragging { return 16 }
+        if isHovering { return 14 }
+        return 12
+    }
+    
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let filledW = fraction * w
+            let midY = geo.size.height / 2
+            
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.15))
+                    .frame(height: 5)
+                    .frame(maxWidth: .infinity)
+                    .position(x: w / 2, y: midY)
+                
+                Capsule()
+                    .fill(Color.white.opacity(isDisabled ? 0.2 : 0.5))
+                    .frame(width: max(0, filledW), height: 5)
+                    .position(x: filledW / 2, y: midY)
+                
+                if !isDisabled && duration > 0 {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: thumbDiameter, height: thumbDiameter)
+                        .shadow(color: .black.opacity(isDragging ? 0.4 : 0.2), radius: isDragging ? 3 : 2, y: 1)
+                        .scaleEffect(isDragging ? 1.05 : 1.0)
+                        .position(x: filledW, y: midY)
+                        .animation(.easeInOut(duration: 0.12), value: thumbDiameter)
+                        .animation(.easeInOut(duration: 0.1), value: isDragging)
+                }
+            }
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                guard !isDisabled else { return }
+                switch phase {
+                case .active:
+                    isHovering = true
+                    NSCursor.pointingHand.set()
+                case .ended:
+                    isHovering = false
+                    if !isDragging { NSCursor.arrow.set() }
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard !isDisabled, duration > 0 else { return }
+                        isDragging = true
+                        dragFraction = value.location.x / w
+                    }
+                    .onEnded { value in
+                        guard !isDisabled, duration > 0 else { return }
+                        let final_ = clamped(value.location.x / w)
+                        onSeek(Float(final_) * duration)
+                        isDragging = false
+                    }
+            )
+        }
+        .frame(height: 20)
+    }
+}
+
 struct ContentView: View {
     @StateObject private var viewModel = EngineViewModel()
     @State private var createSeedText = "5"
@@ -102,13 +187,18 @@ struct ContentView: View {
                 // Track Info（上方，占据剩余空间）
                 trackInfoSection
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                
+                // Progress Bar + Time Labels
+                progressSection
                 
                 // Playback Controls（固定在底部）
                 playbackControls
-                    .padding(.vertical, 20)
+                    .padding(.top, 4)
+                    .padding(.bottom, 20)
             }
             .frame(minWidth: kMinWindowWidth, minHeight: kMinWindowHeight)
-            .padding()
             
         }
         .frame(minWidth: kMinWindowWidth, minHeight: kMinWindowHeight)
@@ -128,6 +218,31 @@ struct ContentView: View {
             .padding(.top, -7)
         }
         .modifier(WindowTransparencyModifier())
+    }
+    
+    /// 进度条区域（全宽进度条 + 左右时间标签）
+    private var progressSection: some View {
+        let duration = viewModel.currentTrackInfo?.duration ?? 0
+        
+        return VStack(spacing: 4) {
+            PlaybackProgressBar(
+                position: viewModel.position,
+                duration: duration,
+                isDisabled: viewModel.isTransitioning || viewModel.currentTrackId == 0,
+                onSeek: { viewModel.seek(to: $0) }
+            )
+            
+            HStack {
+                Text(formatTime(viewModel.position))
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(formatTime(duration))
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 16)
+        }
     }
     
     /// 播放控制按钮（固定在底部）
@@ -243,7 +358,6 @@ struct ContentView: View {
                     trackInfoContent(
                         info: info,
                         metadata: viewModel.currentTrackMetadata,
-                        position: viewModel.position,
                         trackIndex: viewModel.currentTrackIndex,
                         totalCount: viewModel.totalPlaylistCount
                     )
@@ -255,7 +369,6 @@ struct ContentView: View {
                     trackInfoContent(
                         info: nextInfo,
                         metadata: viewModel.nextTrackMetadata,
-                        position: 0,
                         trackIndex: viewModel.playlistTrackIds.firstIndex(of: nextInfo.id).map { $0 + 1 } ?? (viewModel.currentTrackIndex + 1),
                         totalCount: viewModel.totalPlaylistCount
                     )
@@ -274,7 +387,6 @@ struct ContentView: View {
     private func trackInfoContent(
         info: TrackInfo,
         metadata: TrackMetadata?,
-        position: Float,
         trackIndex: Int,
         totalCount: Int
     ) -> some View {
@@ -325,16 +437,6 @@ struct ContentView: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .opacity(albumName.isEmpty ? 0 : 1)
-            
-            // 进度与时长
-            HStack(spacing: 8) {
-                Text(formatTime(position))
-                    .font(.body.monospacedDigit())
-                Text("/")
-                Text(formatTime(info.duration))
-                    .font(.body.monospacedDigit())
-            }
-            .foregroundColor(.secondary)
             
             // 第几首 / 共几首（始终占位）
             Text(totalCount > 0 ? "\(trackIndex) / \(totalCount)" : " ")
