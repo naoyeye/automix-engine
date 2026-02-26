@@ -211,6 +211,11 @@ public:
      */
     int channels() const { return 2; }
     
+    /**
+     * Get the underlying store.
+     */
+    Store& store() { return *store_; }
+    
 private:
     // Track loader callback for scheduler
     Result<AudioBuffer> load_track_audio(int64_t track_id);

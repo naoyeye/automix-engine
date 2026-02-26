@@ -29,6 +29,24 @@ public struct AutoMixStatus {
     public let nextTrackId: Int64
 }
 
+public struct AutomixTrackMetadata {
+    public var title: String?
+    public var artist: String?
+    public var album: String?
+    public var artworkData: Data?
+    public var source: String?
+    public var fetchedAt: Int64
+    
+    public init(title: String? = nil, artist: String? = nil, album: String? = nil, artworkData: Data? = nil, source: String? = nil, fetchedAt: Int64 = 0) {
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.artworkData = artworkData
+        self.source = source
+        self.fetchedAt = fetchedAt
+    }
+}
+
 /// The core engine class of the Swift wrapper. Manages the lifecycle of the underlying
 /// C `AutoMixEngine` instance, library scanning, playlist generation, and audio control.
 public class AutoMixEngine {
@@ -200,6 +218,83 @@ public class AutoMixEngine {
     }
     
     // MARK: - Track Retrieval
+    
+    public func getTrackMetadata(trackId: Int64) throws -> AutomixTrackMetadata {
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        var cMetadata = AutoMixTrackMetadata()
+        let result = automix_get_track_metadata(engine, trackId, &cMetadata)
+        
+        if result == AUTOMIX_ERROR_FILE_NOT_FOUND {
+            throw AutoMixError.fileNotFound
+        } else if result != AUTOMIX_OK {
+            throw AutoMixError.from(code: result.rawValue)
+        }
+        
+        defer {
+            automix_free_track_metadata(&cMetadata)
+        }
+        
+        let title = cMetadata.title.map { String(cString: $0) }
+        let artist = cMetadata.artist.map { String(cString: $0) }
+        let album = cMetadata.album.map { String(cString: $0) }
+        let source = cMetadata.source.map { String(cString: $0) }
+        
+        var artworkData: Data? = nil
+        if let dataPtr = cMetadata.artwork_data, cMetadata.artwork_data_size > 0 {
+            artworkData = Data(bytes: dataPtr, count: Int(cMetadata.artwork_data_size))
+        }
+        
+        return AutomixTrackMetadata(
+            title: title,
+            artist: artist,
+            album: album,
+            artworkData: artworkData,
+            source: source,
+            fetchedAt: cMetadata.fetched_at
+        )
+    }
+    
+    public func setTrackMetadata(trackId: Int64, metadata: AutomixTrackMetadata) throws {
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        
+        var cMetadata = AutoMixTrackMetadata()
+        cMetadata.track_id = trackId
+        
+        let titleCStr = metadata.title?.withCString { strdup($0) }
+        let artistCStr = metadata.artist?.withCString { strdup($0) }
+        let albumCStr = metadata.album?.withCString { strdup($0) }
+        let sourceCStr = metadata.source?.withCString { strdup($0) }
+        
+        defer {
+            free(titleCStr)
+            free(artistCStr)
+            free(albumCStr)
+            free(sourceCStr)
+        }
+        
+        cMetadata.title = UnsafePointer(titleCStr)
+        cMetadata.artist = UnsafePointer(artistCStr)
+        cMetadata.album = UnsafePointer(albumCStr)
+        cMetadata.source = UnsafePointer(sourceCStr)
+        cMetadata.fetched_at = metadata.fetchedAt
+        
+        var result: CAutomix.AutoMixError
+        if let data = metadata.artworkData {
+            result = data.withUnsafeBytes { buffer in
+                cMetadata.artwork_data = buffer.bindMemory(to: UInt8.self).baseAddress
+                cMetadata.artwork_data_size = Int32(data.count)
+                return automix_set_track_metadata(engine, &cMetadata)
+            }
+        } else {
+            cMetadata.artwork_data = nil
+            cMetadata.artwork_data_size = 0
+            result = automix_set_track_metadata(engine, &cMetadata)
+        }
+        
+        if result != AUTOMIX_OK {
+            throw AutoMixError.from(code: Int32(result.rawValue))
+        }
+    }
     
     /// Returns the number of tracks currently in the library.
     /// - Returns: The total number of analyzed tracks in the library.
