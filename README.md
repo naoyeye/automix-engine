@@ -57,7 +57,7 @@ https://github.com/MTG/essentia/blob/master/doc/sphinxdoc/installing.rst
 
 1. 
 清理旧的构建配置：
-`rm -rf build`
+`rm -rf cmake-build`
 
 2. 重新配置 (指定 C++17)
 
@@ -75,7 +75,7 @@ conda install -c conda-forge essentia
 ## 编译
 
 ```bash
-mkdir build && cd build
+mkdir cmake-build && cd cmake-build
 cmake ..
 # 如果遇到架构不兼容问题 (Apple Silicon)，尝试:
 # cmake -DCMAKE_OSX_ARCHITECTURES=x86_64 ..
@@ -117,7 +117,7 @@ cmake --build .
 
 ```bash
 # 编译
-cd build && make automix-render-transition
+cd cmake-build && make automix-render-transition
 
 # 使用 (通常通过脚本调用)
 ./automix-render-transition automix.db {track_id_1} {track_id_2} output.wav
