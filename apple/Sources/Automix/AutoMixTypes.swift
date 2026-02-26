@@ -8,7 +8,7 @@
 import Foundation
 
 /// Error types that map to the C API's `AutoMixError` codes.
-public enum AutoMixError: Error {
+public enum AutoMixError: Error, Equatable {
     case invalidArgument
     case fileNotFound
     case decodeFailed
@@ -19,8 +19,31 @@ public enum AutoMixError: Error {
     case notInitialized
     case unknown(Int)
     
-    // TODO: Add a static factory method that maps a C Int32 code to this enum:
-    // static func from(code: Int32) -> AutoMixError
+    /// Maps a C API `AutoMixError` code (Int32) to the corresponding Swift enum case.
+    public static func from(code: Int32) -> AutoMixError {
+        switch code {
+        case 0:
+            return .unknown(0)  // AUTOMIX_OK - should not be used as error
+        case -1:
+            return .invalidArgument
+        case -2:
+            return .fileNotFound
+        case -3:
+            return .decodeFailed
+        case -4:
+            return .analysisFailed
+        case -5:
+            return .databaseError
+        case -6:
+            return .playbackError
+        case -7:
+            return .outOfMemory
+        case -8:
+            return .notInitialized
+        default:
+            return .unknown(Int(code))
+        }
+    }
 }
 
 /// Playback states that map to the C API's `AutoMixPlaybackState`.

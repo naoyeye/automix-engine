@@ -13,6 +13,9 @@ let package = Package(
         .library(
             name: "Automix",
             targets: ["Automix"]),
+        .executable(
+            name: "AutomixDemo",
+            targets: ["AutomixDemo"])
     ],
     targets: [
         .systemLibrary(
@@ -43,6 +46,11 @@ let package = Package(
                 .linkedFramework("AudioToolbox"),
                 .linkedFramework("CoreFoundation")
             ]
+        ),
+        .executableTarget(
+            name: "AutomixDemo",
+            dependencies: ["Automix"],
+            path: "apple/Examples/AutomixDemo"
         ),
         .testTarget(
             name: "AutomixTests",
