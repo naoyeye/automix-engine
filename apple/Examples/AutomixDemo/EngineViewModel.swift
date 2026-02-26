@@ -37,6 +37,7 @@ class EngineViewModel: ObservableObject {
     private var engine: AutoMixEngine?
     private var cancellables = Set<AnyCancellable>()
     private nonisolated(unsafe) var pollTimer: Timer?
+    private var metadataTask: Task<Void, Never>?
     
     init() {
         setupEngine()
@@ -59,7 +60,7 @@ class EngineViewModel: ObservableObject {
         
         // 1. 优先从项目根目录（当前工作目录）迁移，便于与 automix-scan/playlist 共用
         migrateFromProjectRootIfNeeded(fileManager: fileManager, destination: destPath, destDir: automixDir)
-        // 2. 尝试从 /var/folders 下的临时目录迁移已有数据库
+        // 2. 尝试从标准临时目录迁移已有数据库
         migrateFromTempIfNeeded(fileManager: fileManager, destination: destPath)
         
         return destPath
@@ -82,20 +83,19 @@ class EngineViewModel: ObservableObject {
         }
     }
     
-    /// 在临时目录中查找 automix.db，若存在且非空则复制到目标路径
+    /// 在标准临时目录中查找 automix.db，若存在且非空则复制到目标路径（含辅助文件）
     private static func migrateFromTempIfNeeded(fileManager: FileManager, destination: String) {
-        // 1. 检查标准临时目录
-        let tempDb = fileManager.temporaryDirectory.appendingPathComponent("automix.db")
-        if migrateFile(from: tempDb.path, to: destination, fileManager: fileManager) {
-            return
-        }
-        // 2. 递归搜索 /var/folders 下的 automix.db
-        let varFolders = URL(fileURLWithPath: "/var/folders")
-        guard let enumerator = fileManager.enumerator(at: varFolders, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { return }
-        while let url = enumerator.nextObject() as? URL {
-            guard url.lastPathComponent == "automix.db" else { continue }
-            if migrateFile(from: url.path, to: destination, fileManager: fileManager) {
-                return
+        let tempDir = fileManager.temporaryDirectory
+        let tempDb = tempDir.appendingPathComponent("automix.db")
+        guard migrateFile(from: tempDb.path, to: destination, fileManager: fileManager) else { return }
+        let destDir = URL(fileURLWithPath: destination).deletingLastPathComponent()
+        let auxSuffixes = ["-journal", "-shm", "-wal"]
+        for suffix in auxSuffixes {
+            let srcAux = tempDir.appendingPathComponent("automix.db\(suffix)")
+            let dstAux = destDir.appendingPathComponent("automix.db\(suffix)")
+            if fileManager.fileExists(atPath: srcAux.path) {
+                try? fileManager.removeItem(atPath: dstAux.path)
+                try? fileManager.copyItem(atPath: srcAux.path, toPath: dstAux.path)
             }
         }
     }
@@ -142,19 +142,17 @@ class EngineViewModel: ObservableObject {
     
     private func startPollTimer() {
         stopPollTimer()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self = self, let engine = self.engine else { return }
-                engine.poll()
-                // status 回调仅在状态变化时触发，播放中需主动读取 position 以更新进度
-                // 过渡中不覆盖 position，保持 next/previous 点击时的乐观更新
-                if self.isPlaying, engine.state != .transitioning {
-                    self.position = engine.position
-                }
+        pollTimer = Timer(timeInterval: 0.02, repeats: true) { [weak self] _ in
+            guard let self = self, let engine = self.engine else { return }
+            engine.poll()
+            if self.isPlaying, engine.state != .transitioning {
+                self.position = engine.position
             }
         }
         pollTimer?.tolerance = 0.005
-        RunLoop.current.add(pollTimer!, forMode: .common)
+        if let pollTimer = pollTimer {
+            RunLoop.main.add(pollTimer, forMode: .common)
+        }
     }
     
     private func stopPollTimer() {
@@ -164,15 +162,20 @@ class EngineViewModel: ObservableObject {
     
     func updateStatus(_ status: AutoMixStatus) {
         self.isPlaying = (status.state == .playing)
-        self.currentTrackId = status.currentTrackId
         self.position = status.position
         
-        if status.currentTrackId != 0 {
-            refreshCurrentTrackInfo(trackId: status.currentTrackId)
-            if !playlistTrackIds.contains(status.currentTrackId) {
-                playlistTrackIds.append(status.currentTrackId)
+        let newTrackId = status.currentTrackId
+        let trackChanged = newTrackId != self.currentTrackId
+        self.currentTrackId = newTrackId
+        
+        if newTrackId != 0, trackChanged {
+            refreshCurrentTrackInfo(trackId: newTrackId)
+            if !playlistTrackIds.contains(newTrackId) {
+                playlistTrackIds.append(newTrackId)
             }
-        } else if status.state == .stopped {
+        } else if newTrackId == 0, status.state == .stopped {
+            metadataTask?.cancel()
+            metadataTask = nil
             currentTrackInfo = nil
             currentTrackMetadata = nil
         }
@@ -180,20 +183,23 @@ class EngineViewModel: ObservableObject {
     
     private func refreshCurrentTrackInfo(trackId: Int64) {
         guard let engine = engine else { return }
+        
+        metadataTask?.cancel()
+        metadataTask = nil
+        currentTrackMetadata = nil
+        
         do {
             currentTrackInfo = try engine.trackInfo(id: trackId)
-            // 异步加载元数据（艺术家、专辑、封面）
             if let info = currentTrackInfo {
-                Task {
-                    let metadata = await TrackMetadataLoader.loadMetadata(from: info.path)
+                let path = info.path
+                metadataTask = Task.detached { [weak self] in
+                    let metadata = await TrackMetadataLoader.loadMetadata(from: path)
+                    guard !Task.isCancelled else { return }
                     await MainActor.run {
-                        if self.currentTrackInfo?.id == trackId {
-                            self.currentTrackMetadata = metadata
-                        }
+                        guard let self = self, self.currentTrackInfo?.id == trackId else { return }
+                        self.currentTrackMetadata = metadata
                     }
                 }
-            } else {
-                currentTrackMetadata = nil
             }
         } catch {
             currentTrackInfo = nil
@@ -285,25 +291,43 @@ class EngineViewModel: ObservableObject {
     
     func next() {
         guard let engine = engine else { return }
-        // 点击后立即乐观更新 UI，不等过渡结束
+        let savedTrackId = currentTrackId
+        let savedPosition = position
+        
         if currentTrackIndex > 0, currentTrackIndex < playlistTrackIds.count {
             let nextId = playlistTrackIds[currentTrackIndex]
             currentTrackId = nextId
             position = 0
             refreshCurrentTrackInfo(trackId: nextId)
         }
-        try? engine.next()
+        do {
+            try engine.next()
+        } catch {
+            currentTrackId = savedTrackId
+            position = savedPosition
+            refreshCurrentTrackInfo(trackId: savedTrackId)
+            statusMessage = "Next failed: \(error)"
+        }
     }
     
     func previous() {
         guard let engine = engine else { return }
-        // 点击后立即乐观更新 UI
+        let savedTrackId = currentTrackId
+        let savedPosition = position
+        
         if currentTrackIndex > 1, currentTrackIndex - 2 < playlistTrackIds.count {
             let prevId = playlistTrackIds[currentTrackIndex - 2]
             currentTrackId = prevId
             position = 0
             refreshCurrentTrackInfo(trackId: prevId)
         }
-        try? engine.previous()
+        do {
+            try engine.previous()
+        } catch {
+            currentTrackId = savedTrackId
+            position = savedPosition
+            refreshCurrentTrackInfo(trackId: savedTrackId)
+            statusMessage = "Previous failed: \(error)"
+        }
     }
 }

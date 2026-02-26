@@ -183,7 +183,7 @@ swift run AutomixDemo
 | 扫描曲库 | 点击「Scan Music Directory」选择音乐目录，自动分析 BPM、调性等特征 |
 | 播放/暂停 | 首次播放时自动以曲库第一首为种子生成 10 首播放列表 |
 | 上一首/下一首 | 在播放列表中切换曲目，支持无缝过渡 |
-| 状态显示 | 显示当前曲目 ID、播放进度、曲库总数等 |
+| 状态显示 | 显示当前曲目名称/艺术家/封面、播放进度及在播放列表中的位置等 |
 
 **注意**：Demo 将数据库持久化到 `~/Library/Application Support/AutomixDemo/automix.db`。首次启动时，会按以下顺序尝试迁移已有数据库（含 `automix.db`、`automix.db-journal`、`automix.db-shm`、`automix.db-wal`）：1）项目根目录（当前工作目录，便于与 `automix-scan`/`automix-playlist` 共用）；2）`/var/folders` 下的临时目录。
 
