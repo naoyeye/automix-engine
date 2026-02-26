@@ -29,7 +29,7 @@ public struct AutoMixStatus {
     public let nextTrackId: Int64
 }
 
-public struct AutomixTrackMetadata {
+public struct AutoMixTrackMetadata {
     public var title: String?
     public var artist: String?
     public var album: String?
@@ -219,9 +219,9 @@ public class AutoMixEngine {
     
     // MARK: - Track Retrieval
     
-    public func getTrackMetadata(trackId: Int64) throws -> AutomixTrackMetadata {
+    public func getTrackMetadata(trackId: Int64) throws -> AutoMixTrackMetadata {
         guard let engine = enginePtr else { throw AutoMixError.notInitialized }
-        var cMetadata = AutoMixTrackMetadata()
+        var cMetadata = CAutomix.AutoMixTrackMetadata()
         let result = automix_get_track_metadata(engine, trackId, &cMetadata)
         
         if result == AUTOMIX_ERROR_FILE_NOT_FOUND {
@@ -244,7 +244,7 @@ public class AutoMixEngine {
             artworkData = Data(bytes: dataPtr, count: Int(cMetadata.artwork_data_size))
         }
         
-        return AutomixTrackMetadata(
+        return AutoMixTrackMetadata(
             title: title,
             artist: artist,
             album: album,
@@ -254,10 +254,10 @@ public class AutoMixEngine {
         )
     }
     
-    public func setTrackMetadata(trackId: Int64, metadata: AutomixTrackMetadata) throws {
+    public func setTrackMetadata(trackId: Int64, metadata: AutoMixTrackMetadata) throws {
         guard let engine = enginePtr else { throw AutoMixError.notInitialized }
         
-        var cMetadata = AutoMixTrackMetadata()
+        var cMetadata = CAutomix.AutoMixTrackMetadata()
         cMetadata.track_id = trackId
         
         let titleCStr = metadata.title?.withCString { strdup($0) }

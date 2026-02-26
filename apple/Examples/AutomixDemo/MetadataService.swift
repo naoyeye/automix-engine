@@ -30,7 +30,7 @@ enum MetadataService {
         }
         
         // 2. Check DB — only use cached data if it has meaningful content or all sources were tried
-        let dbMetadata: AutomixTrackMetadata? = await MainActor.run {
+        let dbMetadata: AutoMixTrackMetadata? = await MainActor.run {
             try? engine.getTrackMetadata(trackId: trackId)
         }
         if let dbMetadata, dbMetadata.fetchedAt > 0 {
@@ -122,7 +122,7 @@ enum MetadataService {
     
     private static func saveToDB(engine: AutoMixEngine, trackId: Int64, metadata: TrackMetadata, source: String) async {
         let artworkData = metadata.artwork?.tiffRepresentation
-        let amMetadata = AutomixTrackMetadata(
+        let amMetadata = AutoMixTrackMetadata(
             title: metadata.title,
             artist: metadata.artist,
             album: metadata.album,
@@ -207,7 +207,7 @@ enum MetadataService {
         var releaseGroupMBID: String?
     }
     
-    // Limits Requests to <= 3 times per second
+    // Limits requests to <= 2.5 times per second
     private static let rateLimiter = RateLimiter(interval: 0.4)
     
     private static func lookupAcoustID(fingerprint: String, duration: Int, apiKey: String) async -> AcoustIDResult? {
@@ -339,10 +339,26 @@ enum MetadataService {
         return nil
     }
     
+    private static func escapeLuceneQueryTerm(_ term: String) -> String {
+        var escaped = ""
+        for ch in term {
+            switch ch {
+            case "+", "-", "&", "|", "!", "(", ")", "{", "}", "[", "]", "^", "\"", "~", "*", "?", ":", "\\", "/":
+                escaped.append("\\")
+                escaped.append(ch)
+            default:
+                escaped.append(ch)
+            }
+        }
+        return escaped
+    }
+
     private static func searchMusicBrainz(artist: String, album: String) async -> String? {
         await mbRateLimiter.wait()
         
-        let query = "artist:\"\(artist)\" AND releasegroup:\"\(album)\""
+        let escapedArtist = escapeLuceneQueryTerm(artist)
+        let escapedAlbum = escapeLuceneQueryTerm(album)
+        let query = "artist:\"\(escapedArtist)\" AND releasegroup:\"\(escapedAlbum)\""
         var components = URLComponents(string: "https://musicbrainz.org/ws/2/release-group/")!
         components.queryItems = [
             URLQueryItem(name: "query", value: query),
@@ -352,7 +368,7 @@ enum MetadataService {
         guard let url = components.url else { return nil }
         
         var request = URLRequest(url: url)
-        request.setValue("AutoMixDemo/1.0.0 ( contact@example.com )", forHTTPHeaderField: "User-Agent")
+        request.setValue("AutoMixDemo/1.0.0 ( automix-demo@example.com )", forHTTPHeaderField: "User-Agent")
         
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
@@ -408,7 +424,7 @@ enum MetadataService {
         guard let url = URL(string: "https://coverartarchive.org/release-group/\(releaseGroupMBID)/front-500") else { return nil }
         
         var request = URLRequest(url: url)
-        request.setValue("AutoMixDemo/1.0.0 ( contact@example.com )", forHTTPHeaderField: "User-Agent")
+        request.setValue("AutoMixDemo/1.0.0 ( automix-demo@example.com )", forHTTPHeaderField: "User-Agent")
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)

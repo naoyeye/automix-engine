@@ -352,12 +352,35 @@ class EngineViewModel: ObservableObject {
                 let apiKey = self.acoustidApiKey
                 let startTime = self.scanStartTime
                 
-                // Fetch metadata for newly scanned tracks
+                // Fetch metadata for newly scanned tracks in bounded batches
                 if let startTime = startTime, let tracks = try? engine.searchTracks(pattern: "%") {
+                    let scanLookbackSeconds: Int64 = 60
+                    let cutoffTimestamp = Int64(startTime.timeIntervalSince1970) - scanLookbackSeconds
+                    var pendingRequests: [(id: Int64, path: String)] = []
                     for trackId in tracks {
-                        if let info = try? engine.trackInfo(id: trackId) {
-                            if info.analyzedAt >= Int64(startTime.timeIntervalSince1970) - 60 {
-                                let _ = await MetadataService.loadMetadata(for: trackId, path: info.path, engine: engine, apiKey: apiKey)
+                        if let info = try? engine.trackInfo(id: trackId),
+                           info.analyzedAt >= cutoffTimestamp {
+                            pendingRequests.append((id: trackId, path: info.path))
+                        }
+                    }
+
+                    let batchSize = 10
+                    var index = 0
+                    while index < pendingRequests.count {
+                        let end = min(index + batchSize, pendingRequests.count)
+                        let batch = pendingRequests[index..<end]
+                        index = end
+
+                        await withTaskGroup(of: Void.self) { group in
+                            for (trackId, path) in batch {
+                                group.addTask {
+                                    let _ = await MetadataService.loadMetadata(
+                                        for: trackId,
+                                        path: path,
+                                        engine: engine,
+                                        apiKey: apiKey
+                                    )
+                                }
                             }
                         }
                     }

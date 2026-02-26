@@ -4,6 +4,7 @@
 
 #include "automix/automix.h"
 #include "../mixer/engine.h"
+#include <climits>
 #include <cstring>
 #include <unordered_map>
 #include <mutex>
@@ -159,7 +160,7 @@ AutoMixError automix_search_tracks(
 }
 
 /* ============================================================================
- * Playlist Generation
+ * Track Metadata Operations
  * ============================================================================ */
 
 AutoMixError automix_get_track_metadata(
@@ -181,6 +182,10 @@ AutoMixError automix_get_track_metadata(
     out_metadata->artwork_url = metadata->artwork_url.empty() ? nullptr : strdup(metadata->artwork_url.c_str());
     
     if (!metadata->artwork_data.empty()) {
+        if (metadata->artwork_data.size() > static_cast<size_t>(INT_MAX)) {
+            engine->last_error = "Artwork data exceeds maximum size";
+            return AUTOMIX_ERROR_INVALID_ARGUMENT;
+        }
         auto* data = new uint8_t[metadata->artwork_data.size()];
         std::memcpy(data, metadata->artwork_data.data(), metadata->artwork_data.size());
         out_metadata->artwork_data = data;
