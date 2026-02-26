@@ -8,16 +8,6 @@ struct ContentView: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            // Text("AutoMix Demo")
-            //     .font(.largeTitle)
-            
-            // // Status
-            // Text(viewModel.statusMessage)
-            //     .font(.headline)
-            //     .foregroundColor(.secondary)
-            //     .multilineTextAlignment(.center)
-            //     .padding(.horizontal)
-            
             // Playback Controls
             HStack(spacing: 10) {
                 Button(action: { viewModel.previous() }) {

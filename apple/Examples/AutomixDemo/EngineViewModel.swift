@@ -36,7 +36,7 @@ class EngineViewModel: ObservableObject {
     
     private var engine: AutoMixEngine?
     private var cancellables = Set<AnyCancellable>()
-    private nonisolated(unsafe) var pollTimer: Timer?
+    private var pollTimerCancellable: AnyCancellable?
     private var metadataTask: Task<Void, Never>?
     
     init() {
@@ -44,12 +44,11 @@ class EngineViewModel: ObservableObject {
     }
     
     deinit {
-        pollTimer?.invalidate()
-        pollTimer = nil
+        stopPollTimer()
     }
     
-    /// 返回持久化数据库路径。优先级：AUTOMIX_DB 环境变量 > Application Support/Automix/automix.db
-    /// 与 CLI 工具（automix-scan、automix-playlist、automix-play）共用同一默认路径。
+    /// 返回持久化数据库路径。优先级：AUTOMIX_DB 环境变量 > Application Support/Automix/automix.db，
+    /// 与 CLI 工具共用同一默认路径。会尝试从临时目录迁移已有数据库。
     private static func persistentDatabasePath() -> String {
         if let envDb = ProcessInfo.processInfo.environment["AUTOMIX_DB"], !envDb.isEmpty {
             return envDb
@@ -113,27 +112,24 @@ class EngineViewModel: ObservableObject {
     
     private func startPollTimer() {
         stopPollTimer()
-        pollTimer = Timer(timeInterval: 0.02, repeats: true) { [weak self] _ in
-            guard let self = self, let engine = self.engine else { return }
-            engine.poll()
-            if self.isPlaying, engine.state != .transitioning {
-                self.position = engine.position
+        pollTimerCancellable = Timer.publish(every: 0.02, tolerance: 0.005, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self, let engine = self.engine else { return }
+                engine.poll()
+                if self.isPlaying, engine.state != .transitioning {
+                    self.position = engine.position
+                }
             }
-        }
-        pollTimer?.tolerance = 0.005
-        if let pollTimer = pollTimer {
-            RunLoop.main.add(pollTimer, forMode: .common)
-        }
     }
     
     private func stopPollTimer() {
-        pollTimer?.invalidate()
-        pollTimer = nil
+        pollTimerCancellable?.cancel()
+        pollTimerCancellable = nil
     }
     
     func updateStatus(_ status: AutoMixStatus) {
         self.isPlaying = (status.state == .playing)
-        self.position = status.position
         
         let newTrackId = status.currentTrackId
         let trackChanged = newTrackId != self.currentTrackId
@@ -149,6 +145,7 @@ class EngineViewModel: ObservableObject {
             metadataTask = nil
             currentTrackInfo = nil
             currentTrackMetadata = nil
+            self.position = 0
         }
     }
     
@@ -256,6 +253,7 @@ class EngineViewModel: ObservableObject {
                             Self.saveSharedPlaylist(dbPath: dbPath, trackIds: playlistTrackIds)
                         } catch {
                             playlistTrackIds = []
+                            requestedPlaylistCount = 0
                         }
                         try engine.play(playlist: playlist)
                         refreshCurrentTrackInfo(trackId: engine.currentTrackId)
