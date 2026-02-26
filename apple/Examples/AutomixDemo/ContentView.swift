@@ -2,6 +2,9 @@ import SwiftUI
 import Automix
 import AppKit
 
+let kMinWindowWidth: CGFloat = 580
+let kMinWindowHeight: CGFloat = 500
+
 /// 配置窗口为透明，以便磨砂背景能透出桌面
 private struct WindowTransparencyModifier: ViewModifier {
     func body(content: Content) -> some View {
@@ -10,11 +13,35 @@ private struct WindowTransparencyModifier: ViewModifier {
 }
 
 private class WindowConfiguratorView: NSView {
+    private weak var configuredWindow: NSWindow?
+    private var originalIsOpaque: Bool?
+    private var originalBackgroundColor: NSColor?
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window = window else { return }
+
+        // Restore settings on the previously configured window if it changed
+        if let previousWindow = configuredWindow, previousWindow !== window {
+            if let originalIsOpaque { previousWindow.isOpaque = originalIsOpaque }
+            if let originalBackgroundColor { previousWindow.backgroundColor = originalBackgroundColor }
+            configuredWindow = nil
+            originalIsOpaque = nil
+            originalBackgroundColor = nil
+        }
+
+        guard let window = window, configuredWindow == nil else { return }
+        originalIsOpaque = window.isOpaque
+        originalBackgroundColor = window.backgroundColor
         window.isOpaque = false
         window.backgroundColor = .clear
+        configuredWindow = window
+    }
+
+    deinit {
+        if let window = configuredWindow {
+            if let originalIsOpaque { window.isOpaque = originalIsOpaque }
+            if let originalBackgroundColor { window.backgroundColor = originalBackgroundColor }
+        }
     }
 }
 
@@ -35,11 +62,9 @@ private extension View {
             .onContinuousHover { phase in
                 switch phase {
                 case .active:
-                    if NSCursor.current != NSCursor.pointingHand {
-                        NSCursor.pointingHand.push()
-                    }
+                    NSCursor.pointingHand.set()
                 case .ended:
-                    NSCursor.pop()
+                    NSCursor.arrow.set()
                 }
             }
     }
@@ -82,11 +107,11 @@ struct ContentView: View {
                 playbackControls
                     .padding(.vertical, 20)
             }
-            .frame(minWidth: 580, minHeight: 500)
+            .frame(minWidth: kMinWindowWidth, minHeight: kMinWindowHeight)
             .padding()
             
         }
-        .frame(minWidth: 580, minHeight: 500)
+        .frame(minWidth: kMinWindowWidth, minHeight: kMinWindowHeight)
         .overlay(alignment: .topTrailing) {
             Button(action: { showLibraryMenu.toggle() }) {
                 Image(systemName: "ellipsis")
@@ -115,6 +140,7 @@ struct ContentView: View {
             .disabled(viewModel.currentTrackId == 0)
             .buttonStyle(InteractiveButtonStyle())
             .pointingHandCursor()
+            .accessibilityLabel("Previous track")
             
             Group {
                 if viewModel.isTransitioning {
@@ -122,6 +148,7 @@ struct ContentView: View {
                         .font(.system(size: 64))
                         .foregroundColor(.secondary)
                         .frame(width: 64, height: 64)
+                        .accessibilityLabel("Transitioning")
                 } else {
                     Button(action: { viewModel.togglePlayPause() }) {
                         Image(systemName: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill")
@@ -130,6 +157,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(InteractiveButtonStyle())
                     .pointingHandCursor()
+                    .accessibilityLabel(viewModel.isPlaying ? "Pause" : "Play")
                 }
             }
             
@@ -140,6 +168,7 @@ struct ContentView: View {
             .disabled(viewModel.currentTrackId == 0)
             .buttonStyle(InteractiveButtonStyle())
             .pointingHandCursor()
+            .accessibilityLabel("Next track")
         }
     }
     
@@ -199,7 +228,7 @@ struct ContentView: View {
                         showLibraryMenu = false
                     }
                 }
-                .disabled(viewModel.trackCount == 0 || viewModel.isPlaying)
+                .disabled(viewModel.trackCount == 0 || viewModel.currentTrackId != 0)
                 .pointingHandCursor()
             }
         }
@@ -227,7 +256,7 @@ struct ContentView: View {
                         info: nextInfo,
                         metadata: viewModel.nextTrackMetadata,
                         position: 0,
-                        trackIndex: viewModel.currentTrackIndex + 1,
+                        trackIndex: viewModel.playlistTrackIds.firstIndex(of: nextInfo.id).map { $0 + 1 } ?? (viewModel.currentTrackIndex + 1),
                         totalCount: viewModel.totalPlaylistCount
                     )
                     .opacity(viewModel.transitionProgress)
