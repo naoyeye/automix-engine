@@ -124,11 +124,11 @@ final class AutomixTests: XCTestCase {
         defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
         let engine = try AutoMixEngine(dbPath: dbPath)
-        // pause/resume/stop/skip should either succeed or throw a typed AutoMixError
-        XCTAssertNoThrow(try? engine.pause())
-        XCTAssertNoThrow(try? engine.resume())
-        XCTAssertNoThrow(try? engine.stop())
-        XCTAssertNoThrow(try? engine.next())
+        // pause/resume/stop/skip should not throw when engine is stopped (succeed or no-op)
+        XCTAssertNoThrow(try engine.pause())
+        XCTAssertNoThrow(try engine.resume())
+        XCTAssertNoThrow(try engine.stop())
+        XCTAssertNoThrow(try engine.next())
     }
 
     /// Verifies state and position accessors return sane defaults on a fresh engine.
@@ -141,7 +141,7 @@ final class AutomixTests: XCTestCase {
         let engine = try AutoMixEngine(dbPath: dbPath)
         XCTAssertEqual(engine.state, .stopped)
         XCTAssertEqual(engine.position, 0.0, accuracy: 0.001)
-        XCTAssertEqual(engine.currentTrackId, -1)
+        XCTAssertEqual(engine.currentTrackId, 0)
     }
 
     /// Verifies that setTransitionConfig does not crash.

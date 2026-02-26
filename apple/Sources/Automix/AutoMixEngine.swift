@@ -21,7 +21,7 @@ public struct AutoMixStatus {
     public let state: AutoMixPlaybackState
     /// Identifier of the track that is currently playing.
     ///
-    /// Depending on engine semantics, a value of `-1` indicates no track is active.
+    /// A value of `0` indicates no track is active (matches C engine semantics).
     public let currentTrackId: Int64
     /// Current playback position within the active track, in seconds.
     public let position: Float

@@ -22,7 +22,7 @@ struct ContentView: View {
                     Image(systemName: "backward.fill")
                         .font(.title)
                 }
-                .disabled(viewModel.currentTrackId == -1)
+                .disabled(viewModel.currentTrackId == 0)
                 
                 Button(action: { viewModel.togglePlayPause() }) {
                     Image(systemName: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill")
@@ -33,13 +33,13 @@ struct ContentView: View {
                     Image(systemName: "forward.fill")
                         .font(.title)
                 }
-                .disabled(viewModel.currentTrackId == -1)
+                .disabled(viewModel.currentTrackId == 0)
             }
             .padding()
             
             // Track Info
             VStack(spacing: 8) {
-                if viewModel.currentTrackId != -1 {
+                if viewModel.currentTrackId != 0 {
                     Text("Track ID: \(viewModel.currentTrackId)")
                         .font(.title2)
                     Text("Position: \(String(format: "%.1f", viewModel.position))s")

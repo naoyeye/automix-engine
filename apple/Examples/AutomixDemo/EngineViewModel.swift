@@ -6,7 +6,7 @@ import AppKit
 @MainActor
 class EngineViewModel: ObservableObject {
     @Published var isPlaying: Bool = false
-    @Published var currentTrackId: Int64 = -1
+    @Published var currentTrackId: Int64 = 0
     @Published var position: Float = 0.0
     @Published var statusMessage: String = "Ready"
     @Published var trackCount: Int = 0
@@ -109,7 +109,7 @@ class EngineViewModel: ObservableObject {
             } else {
                 // If stopped, we might need to play a playlist first
                 // For demo, let's try to generate a playlist if none playing
-                if engine.currentTrackId == -1 {
+                if engine.currentTrackId == 0 {
                     // Generate random playlist
                      // We need a seed track. Let's pick the first one if available.
                     // Since we don't have a way to get all tracks easily yet (except search),
