@@ -10,9 +10,11 @@
 namespace automix {
 
 Store::Store(const std::string& db_path) {
-    int rc = sqlite3_open(db_path.c_str(), &db_);
+    int rc = sqlite3_open_v2(db_path.c_str(), &db_,
+        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
+        nullptr);
     if (rc != SQLITE_OK) {
-        last_error_ = sqlite3_errmsg(db_);
+        last_error_ = db_ ? sqlite3_errmsg(db_) : "Failed to open database";
         sqlite3_close(db_);
         db_ = nullptr;
         return;
@@ -21,6 +23,9 @@ Store::Store(const std::string& db_path) {
     // Enable WAL mode for better concurrency
     sqlite3_exec(db_, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
     sqlite3_exec(db_, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
+    
+    // Enable foreign keys for CASCADE DELETE
+    sqlite3_exec(db_, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr);
     
     init_schema();
 }
@@ -65,6 +70,17 @@ void Store::init_schema() {
         CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
         CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON tracks(bpm);
         CREATE INDEX IF NOT EXISTS idx_tracks_key ON tracks(key);
+        
+        CREATE TABLE IF NOT EXISTS track_metadata (
+            track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+            title TEXT,
+            artist TEXT,
+            album TEXT,
+            artwork_url TEXT,
+            artwork_data BLOB,
+            source TEXT,
+            fetched_at INTEGER DEFAULT 0
+        );
     )";
     
     char* err_msg = nullptr;
@@ -382,6 +398,100 @@ int Store::cleanup_missing_files() {
     }
     
     return removed;
+}
+
+bool Store::upsert_track_metadata(const TrackMetadata& metadata) {
+    if (!db_) return false;
+    
+    const char* sql = R"(
+        INSERT INTO track_metadata (track_id, title, artist, album, artwork_url, artwork_data, source, fetched_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(track_id) DO UPDATE SET
+            title = excluded.title,
+            artist = excluded.artist,
+            album = excluded.album,
+            artwork_url = excluded.artwork_url,
+            artwork_data = excluded.artwork_data,
+            source = excluded.source,
+            fetched_at = excluded.fetched_at
+    )";
+    
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        last_error_ = std::string("Prepare failed: ") + sqlite3_errmsg(db_);
+        return false;
+    }
+    
+    sqlite3_bind_int64(stmt, 1, metadata.track_id);
+    sqlite3_bind_text(stmt, 2, metadata.title.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, metadata.artist.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, metadata.album.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, metadata.artwork_url.c_str(), -1, SQLITE_TRANSIENT);
+    
+    if (!metadata.artwork_data.empty()) {
+        sqlite3_bind_blob(stmt, 6, metadata.artwork_data.data(), static_cast<int>(metadata.artwork_data.size()), SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(stmt, 6);
+    }
+    
+    sqlite3_bind_text(stmt, 7, metadata.source.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 8, metadata.fetched_at);
+    
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        last_error_ = std::string("Insert metadata failed: ") + sqlite3_errmsg(db_);
+        return false;
+    }
+    return true;
+}
+
+std::optional<TrackMetadata> Store::get_track_metadata(int64_t track_id) {
+    if (!db_) return std::nullopt;
+    
+    const char* sql = "SELECT title, artist, album, artwork_url, artwork_data, source, fetched_at FROM track_metadata WHERE track_id = ?";
+    sqlite3_stmt* stmt;
+    
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return std::nullopt;
+    }
+    
+    sqlite3_bind_int64(stmt, 1, track_id);
+    
+    std::optional<TrackMetadata> result;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        TrackMetadata md;
+        md.track_id = track_id;
+        
+        const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        md.title = title ? title : "";
+        
+        const char* artist = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        md.artist = artist ? artist : "";
+        
+        const char* album = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        md.album = album ? album : "";
+        
+        const char* artwork_url = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        md.artwork_url = artwork_url ? artwork_url : "";
+        
+        int blob_size = sqlite3_column_bytes(stmt, 4);
+        if (blob_size > 0) {
+            const void* blob_data = sqlite3_column_blob(stmt, 4);
+            md.artwork_data.assign(static_cast<const uint8_t*>(blob_data), static_cast<const uint8_t*>(blob_data) + blob_size);
+        }
+        
+        const char* source = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+        md.source = source ? source : "";
+        
+        md.fetched_at = sqlite3_column_int64(stmt, 6);
+        
+        result = md;
+    }
+    
+    sqlite3_finalize(stmt);
+    return result;
 }
 
 } // namespace automix

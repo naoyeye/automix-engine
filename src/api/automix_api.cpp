@@ -4,6 +4,7 @@
 
 #include "automix/automix.h"
 #include "../mixer/engine.h"
+#include <climits>
 #include <cstring>
 #include <unordered_map>
 #include <mutex>
@@ -156,6 +157,98 @@ AutoMixError automix_search_tracks(
     }
     
     return AUTOMIX_OK;
+}
+
+/* ============================================================================
+ * Track Metadata Operations
+ * ============================================================================ */
+
+AutoMixError automix_get_track_metadata(
+    AutoMixEngine* engine,
+    int64_t track_id,
+    AutoMixTrackMetadata* out_metadata
+) {
+    if (!engine || !engine->engine || !out_metadata) return AUTOMIX_ERROR_INVALID_ARGUMENT;
+    
+    auto metadata = engine->engine->store().get_track_metadata(track_id);
+    if (!metadata) {
+        return AUTOMIX_ERROR_FILE_NOT_FOUND;
+    }
+    
+    out_metadata->track_id = metadata->track_id;
+    out_metadata->title = metadata->title.empty() ? nullptr : strdup(metadata->title.c_str());
+    out_metadata->artist = metadata->artist.empty() ? nullptr : strdup(metadata->artist.c_str());
+    out_metadata->album = metadata->album.empty() ? nullptr : strdup(metadata->album.c_str());
+    out_metadata->artwork_url = metadata->artwork_url.empty() ? nullptr : strdup(metadata->artwork_url.c_str());
+    
+    if (!metadata->artwork_data.empty()) {
+        if (metadata->artwork_data.size() > static_cast<size_t>(INT_MAX)) {
+            engine->last_error = "Artwork data exceeds maximum size";
+            return AUTOMIX_ERROR_INVALID_ARGUMENT;
+        }
+        auto* data = new uint8_t[metadata->artwork_data.size()];
+        std::memcpy(data, metadata->artwork_data.data(), metadata->artwork_data.size());
+        out_metadata->artwork_data = data;
+        out_metadata->artwork_data_size = static_cast<int>(metadata->artwork_data.size());
+    } else {
+        out_metadata->artwork_data = nullptr;
+        out_metadata->artwork_data_size = 0;
+    }
+    
+    out_metadata->source = metadata->source.empty() ? nullptr : strdup(metadata->source.c_str());
+    out_metadata->fetched_at = metadata->fetched_at;
+    
+    return AUTOMIX_OK;
+}
+
+AutoMixError automix_set_track_metadata(
+    AutoMixEngine* engine,
+    const AutoMixTrackMetadata* metadata
+) {
+    if (!engine || !engine->engine || !metadata) return AUTOMIX_ERROR_INVALID_ARGUMENT;
+    
+    TrackMetadata md;
+    md.track_id = metadata->track_id;
+    if (metadata->title) md.title = metadata->title;
+    if (metadata->artist) md.artist = metadata->artist;
+    if (metadata->album) md.album = metadata->album;
+    if (metadata->artwork_url) md.artwork_url = metadata->artwork_url;
+    
+    if (metadata->artwork_data && metadata->artwork_data_size > 0) {
+        md.artwork_data.assign(metadata->artwork_data, metadata->artwork_data + metadata->artwork_data_size);
+    }
+    
+    if (metadata->source) md.source = metadata->source;
+    md.fetched_at = metadata->fetched_at;
+    
+    if (!engine->engine->store().upsert_track_metadata(md)) {
+        engine->last_error = engine->engine->store().error();
+        return AUTOMIX_ERROR_DATABASE_ERROR;
+    }
+    
+    return AUTOMIX_OK;
+}
+
+void automix_free_track_metadata(AutoMixTrackMetadata* metadata) {
+    if (!metadata) return;
+    
+    if (metadata->title) free(const_cast<char*>(metadata->title));
+    if (metadata->artist) free(const_cast<char*>(metadata->artist));
+    if (metadata->album) free(const_cast<char*>(metadata->album));
+    if (metadata->artwork_url) free(const_cast<char*>(metadata->artwork_url));
+    if (metadata->source) free(const_cast<char*>(metadata->source));
+    
+    if (metadata->artwork_data) {
+        delete[] metadata->artwork_data;
+    }
+    
+    metadata->title = nullptr;
+    metadata->artist = nullptr;
+    metadata->album = nullptr;
+    metadata->artwork_url = nullptr;
+    metadata->source = nullptr;
+    metadata->artwork_data = nullptr;
+    metadata->artwork_data_size = 0;
 }
 
 /* ============================================================================

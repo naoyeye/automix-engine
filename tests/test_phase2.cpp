@@ -204,6 +204,157 @@ TEST(store_needs_analysis) {
 }
 
 /* ============================================================================
+ * Track Metadata Tests
+ * ============================================================================ */
+
+TEST(store_metadata_upsert_and_get) {
+    Store store(":memory:");
+    assert(store.is_open());
+
+    // Insert a parent track first (FK constraint)
+    TrackInfo track;
+    track.path = "/test/song.mp3";
+    auto result = store.upsert_track(track);
+    assert(result.ok());
+    int64_t track_id = result.value();
+
+    TrackMetadata md;
+    md.track_id = track_id;
+    md.title = "Test Title";
+    md.artist = "Test Artist";
+    md.album = "Test Album";
+    md.source = "file";
+    md.fetched_at = 1700000000;
+
+    assert(store.upsert_track_metadata(md));
+
+    auto got = store.get_track_metadata(track_id);
+    assert(got.has_value());
+    assert(got->track_id == track_id);
+    assert(got->title == "Test Title");
+    assert(got->artist == "Test Artist");
+    assert(got->album == "Test Album");
+    assert(got->source == "file");
+    assert(got->fetched_at == 1700000000);
+}
+
+TEST(store_metadata_upsert_update) {
+    Store store(":memory:");
+    assert(store.is_open());
+
+    TrackInfo track;
+    track.path = "/test/song2.mp3";
+    auto result = store.upsert_track(track);
+    assert(result.ok());
+    int64_t track_id = result.value();
+
+    TrackMetadata md;
+    md.track_id = track_id;
+    md.title = "Original Title";
+    md.source = "acoustid";
+    md.fetched_at = 1000;
+    assert(store.upsert_track_metadata(md));
+
+    // Update with new values
+    md.title = "Updated Title";
+    md.artist = "New Artist";
+    md.fetched_at = 2000;
+    assert(store.upsert_track_metadata(md));
+
+    auto got = store.get_track_metadata(track_id);
+    assert(got.has_value());
+    assert(got->title == "Updated Title");
+    assert(got->artist == "New Artist");
+    assert(got->fetched_at == 2000);
+}
+
+TEST(store_metadata_not_found) {
+    Store store(":memory:");
+    assert(store.is_open());
+
+    // Query metadata for a non-existent track
+    auto got = store.get_track_metadata(9999);
+    assert(!got.has_value());
+}
+
+TEST(store_metadata_artwork_data) {
+    Store store(":memory:");
+    assert(store.is_open());
+
+    TrackInfo track;
+    track.path = "/test/artwork.mp3";
+    auto result = store.upsert_track(track);
+    assert(result.ok());
+    int64_t track_id = result.value();
+
+    TrackMetadata md;
+    md.track_id = track_id;
+    md.title = "Artwork Song";
+    md.artwork_data = {0x89, 0x50, 0x4E, 0x47};  // PNG header bytes
+    md.artwork_url = "https://example.com/cover.jpg";
+    md.source = "musicbrainz";
+    md.fetched_at = 1700000001;
+    assert(store.upsert_track_metadata(md));
+
+    auto got = store.get_track_metadata(track_id);
+    assert(got.has_value());
+    assert(got->artwork_data.size() == 4);
+    assert(got->artwork_data[0] == 0x89);
+    assert(got->artwork_url == "https://example.com/cover.jpg");
+}
+
+TEST(store_metadata_cascade_delete) {
+    Store store(":memory:");
+    assert(store.is_open());
+
+    TrackInfo track;
+    track.path = "/test/cascade.mp3";
+    auto result = store.upsert_track(track);
+    assert(result.ok());
+    int64_t track_id = result.value();
+
+    TrackMetadata md;
+    md.track_id = track_id;
+    md.title = "Will Be Deleted";
+    md.source = "file";
+    md.fetched_at = 1700000002;
+    assert(store.upsert_track_metadata(md));
+
+    // Verify metadata exists
+    assert(store.get_track_metadata(track_id).has_value());
+
+    // Delete the track — metadata should be cascade-deleted
+    assert(store.delete_track(track_id));
+    assert(!store.get_track_metadata(track_id).has_value());
+}
+
+TEST(store_metadata_empty_fields) {
+    Store store(":memory:");
+    assert(store.is_open());
+
+    TrackInfo track;
+    track.path = "/test/empty.mp3";
+    auto result = store.upsert_track(track);
+    assert(result.ok());
+    int64_t track_id = result.value();
+
+    // Insert metadata with all optional fields empty
+    TrackMetadata md;
+    md.track_id = track_id;
+    md.source = "none";
+    md.fetched_at = 1700000003;
+    assert(store.upsert_track_metadata(md));
+
+    auto got = store.get_track_metadata(track_id);
+    assert(got.has_value());
+    assert(got->title.empty());
+    assert(got->artist.empty());
+    assert(got->album.empty());
+    assert(got->artwork_data.empty());
+    assert(got->source == "none");
+}
+
+/* ============================================================================
  * Utils Module Tests
  * ============================================================================ */
 
@@ -485,6 +636,14 @@ int main() {
     RUN_TEST(store_get_all_tracks);
     RUN_TEST(store_search_tracks);
     RUN_TEST(store_needs_analysis);
+    
+    std::cout << "\n--- Store Metadata Module ---\n";
+    RUN_TEST(store_metadata_upsert_and_get);
+    RUN_TEST(store_metadata_upsert_update);
+    RUN_TEST(store_metadata_not_found);
+    RUN_TEST(store_metadata_artwork_data);
+    RUN_TEST(store_metadata_cascade_delete);
+    RUN_TEST(store_metadata_empty_fields);
     
     std::cout << "\n--- Utils Module ---\n";
     RUN_TEST(utils_math);

@@ -123,6 +123,21 @@ struct TrackInfo {
 };
 
 /* ============================================================================
+ * Track Metadata (Database Record)
+ * ============================================================================ */
+
+struct TrackMetadata {
+    int64_t track_id = 0;
+    std::string title;
+    std::string artist;
+    std::string album;
+    std::string artwork_url;
+    std::vector<uint8_t> artwork_data;
+    std::string source;                 // 'file' | 'acoustid' | 'none'
+    int64_t fetched_at = 0;             // Unix timestamp
+};
+
+/* ============================================================================
  * Transition Types
  * ============================================================================ */
 

@@ -22,6 +22,7 @@
 
 ### 可选
 - Rubber Band (time-stretch 功能)
+- Chromaprint / fpcalc (声纹识别，用于补全缺失的音频元数据)
 
 ## 分发说明 (Distribution)
 
@@ -34,6 +35,9 @@ brew install cmake ffmpeg sqlite3
 
 # 可选: time-stretch 功能
 brew install rubberband
+
+# 可选: 声纹识别（用于缺失元数据补全）
+brew install chromaprint
 ```
 
 ### Essentia（必需，完整音频分析）
@@ -217,6 +221,54 @@ swift run AutomixDemo
 | 状态显示 | 显示当前曲目名称/艺术家/封面、播放进度及在播放列表中的位置等 |
 
 **注意**：Demo 与 CLI 共用同一默认数据库路径（见上文「数据库路径」）。未设置 `AUTOMIX_DB` 时，数据保存在 `~/Library/Application Support/Automix/automix.db`。
+
+#### 曲目元数据获取流程
+
+Demo 播放时会自动为每首曲目获取 title、artist、album 和专辑封面。获取流程按优先级依次尝试，结果缓存到 SQLite，后续播放直接读取缓存：
+
+```
+1. 文件内嵌标签（AVFoundation）
+   └─ title + artist + artwork 齐全 → 直接使用
+   └─ title + artist 有但缺封面 → 跳到步骤 5 补搜封面
+
+2. 数据库缓存
+   └─ 有完整内容或已完整尝试过所有来源 → 直接使用
+
+3. AcoustID 声纹识别（需要 fpcalc + API key）
+   └─ 通过音频指纹查询 AcoustID → 获取 title/artist/album
+   └─ 通过 MusicBrainz release-group MBID → Cover Art Archive 获取封面
+   └─ 封面仍缺失 → 跳到步骤 5
+
+4. 文件名解析
+   └─ 支持的模式：
+      "Artist [Year] Album [Track#] Title.ext"
+      "Artist - Album - Track# Title.ext"
+      "Artist - Title.ext"
+      "Track# Title.ext"
+   └─ 提取 artist/album/title 后跳到步骤 5
+
+5. 封面搜索（MusicBrainz → iTunes）
+   └─ MusicBrainz Search API → 查找 release-group MBID → Cover Art Archive
+   └─ 若失败 → iTunes Search API（免费，无需 key）→ 获取专辑封面
+```
+
+**配置要求**：
+
+| 依赖 | 用途 | 安装方式 |
+|------|------|----------|
+| fpcalc | 音频指纹提取（AcoustID 步骤 3） | `brew install chromaprint` |
+| AcoustID API key | 声纹查询（步骤 3） | 在 [acoustid.org](https://acoustid.org/) 注册后获取 |
+
+API key 配置：创建 `keys.json` 文件，放在以下任一位置：
+1. `~/Library/Application Support/AutomixDemo/keys.json`（推荐）
+2. 当前工作目录下
+3. App Bundle 内
+
+```json
+{"apikey": "你的AcoustID客户端API密钥"}
+```
+
+步骤 4（文件名解析）和步骤 5（MusicBrainz/iTunes 封面搜索）不需要任何额外配置。
 
 ### Swift 集成 (macOS/iOS)
 

@@ -51,6 +51,19 @@ typedef struct {
     int64_t analyzed_at;    /* Unix timestamp */
 } AutoMixTrackInfo;
 
+/* Track metadata */
+typedef struct {
+    int64_t track_id;
+    const char* title;
+    const char* artist;
+    const char* album;
+    const char* artwork_url;
+    const uint8_t* artwork_data;
+    int artwork_data_size;
+    const char* source;
+    int64_t fetched_at;
+} AutoMixTrackMetadata;
+
 /* Playlist generation rules */
 typedef struct {
     float bpm_tolerance;        /* Max BPM difference (0.0 = any) */
@@ -182,6 +195,37 @@ AutoMixError automix_search_tracks(
     int64_t** out_ids,
     int* out_count
 );
+
+/**
+ * Get metadata for a track.
+ * 
+ * @param engine Engine instance
+ * @param track_id Track ID
+ * @param out_metadata Output parameter for metadata. Caller MUST free string fields and artwork_data with automix_free_track_metadata().
+ * @return AUTOMIX_OK on success, or AUTOMIX_ERROR_FILE_NOT_FOUND if not found.
+ */
+AutoMixError automix_get_track_metadata(
+    AutoMixEngine* engine,
+    int64_t track_id,
+    AutoMixTrackMetadata* out_metadata
+);
+
+/**
+ * Set metadata for a track.
+ * 
+ * @param engine Engine instance
+ * @param metadata The metadata to save.
+ * @return AUTOMIX_OK on success.
+ */
+AutoMixError automix_set_track_metadata(
+    AutoMixEngine* engine,
+    const AutoMixTrackMetadata* metadata
+);
+
+/**
+ * Free track metadata allocated by automix_get_track_metadata.
+ */
+void automix_free_track_metadata(AutoMixTrackMetadata* metadata);
 
 /* ============================================================================
  * Playlist Generation

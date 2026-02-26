@@ -31,6 +31,9 @@ class EngineViewModel: ObservableObject {
     /// 生成播放列表时请求的曲目数（getTrackIDs 失败时用于 fallback 的总数）
     @Published var requestedPlaylistCount: Int = 0
     
+    private var acoustidApiKey: String?
+    private var scanStartTime: Date?
+    
     /// 当前是第几首（1-based）
     var currentTrackIndex: Int {
         guard currentTrackId != 0, let idx = playlistTrackIds.firstIndex(of: currentTrackId) else { return 0 }
@@ -76,6 +79,29 @@ class EngineViewModel: ObservableObject {
         return automixDir.appendingPathComponent("automix.db").path
     }
 
+    private static func keysPath() -> String {
+        let fileManager = FileManager.default
+        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let automixDir = appSupport.appendingPathComponent("AutomixDemo", isDirectory: true)
+            let path = automixDir.appendingPathComponent("keys.json").path
+            if fileManager.fileExists(atPath: path) { return path }
+        }
+        
+        let localPath = URL(fileURLWithPath: fileManager.currentDirectoryPath).appendingPathComponent("keys.json").path
+        if fileManager.fileExists(atPath: localPath) { return localPath }
+        
+        return Bundle.main.path(forResource: "keys", ofType: "json") ?? ""
+    }
+    
+    private func loadKeys() {
+        let path = Self.keysPath()
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            return
+        }
+        acoustidApiKey = json["apikey"]
+    }
+
     /// 共享播放列表文件路径（与 CLI 一致，与数据库同目录）
     private static func sharedPlaylistPathFor(dbPath: String) -> String {
         let url = URL(fileURLWithPath: dbPath)
@@ -100,6 +126,7 @@ class EngineViewModel: ObservableObject {
     }
     
     func setupEngine() {
+        loadKeys()
         let dbPath = Self.persistentDatabasePath()
         do {
             engine = try AutoMixEngine(dbPath: dbPath)
@@ -238,7 +265,8 @@ class EngineViewModel: ObservableObject {
             if let info = nextTrackInfo {
                 let path = info.path
                 nextMetadataTask = Task.detached { [weak self] in
-                    let metadata = await TrackMetadataLoader.loadMetadata(from: path)
+                    let apiKey = await self?.acoustidApiKey
+                    let metadata = await MetadataService.loadMetadata(for: trackId, path: path, engine: engine, apiKey: apiKey)
                     guard !Task.isCancelled else { return }
                     let viewModel = self
                     await MainActor.run {
@@ -270,7 +298,8 @@ class EngineViewModel: ObservableObject {
             if let info = currentTrackInfo {
                 let path = info.path
                 metadataTask = Task.detached { [weak self] in
-                    let metadata = await TrackMetadataLoader.loadMetadata(from: path)
+                    let apiKey = await self?.acoustidApiKey
+                    let metadata = await MetadataService.loadMetadata(for: trackId, path: path, engine: engine, apiKey: apiKey)
                     guard !Task.isCancelled else { return }
                     let viewModel = self
                     await MainActor.run {
@@ -308,6 +337,7 @@ class EngineViewModel: ObservableObject {
         scannedTracks = 0
         totalTracksToScan = 0
         statusMessage = "Scanning..."
+        scanStartTime = Date()
         
         Task {
             do {
@@ -319,6 +349,43 @@ class EngineViewModel: ObservableObject {
                     }
                 }
                 let trackCount = engine.trackCount()
+                let apiKey = self.acoustidApiKey
+                let startTime = self.scanStartTime
+                
+                // Fetch metadata for newly scanned tracks in bounded batches
+                if let startTime = startTime, let tracks = try? engine.searchTracks(pattern: "%") {
+                    let scanLookbackSeconds: Int64 = 60
+                    let cutoffTimestamp = Int64(startTime.timeIntervalSince1970) - scanLookbackSeconds
+                    var pendingRequests: [(id: Int64, path: String)] = []
+                    for trackId in tracks {
+                        if let info = try? engine.trackInfo(id: trackId),
+                           info.analyzedAt >= cutoffTimestamp {
+                            pendingRequests.append((id: trackId, path: info.path))
+                        }
+                    }
+
+                    let batchSize = 10
+                    var index = 0
+                    while index < pendingRequests.count {
+                        let end = min(index + batchSize, pendingRequests.count)
+                        let batch = pendingRequests[index..<end]
+                        index = end
+
+                        await withTaskGroup(of: Void.self) { group in
+                            for (trackId, path) in batch {
+                                group.addTask {
+                                    let _ = await MetadataService.loadMetadata(
+                                        for: trackId,
+                                        path: path,
+                                        engine: engine,
+                                        apiKey: apiKey
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 await MainActor.run {
                     self.isScanning = false
                     self.statusMessage = "Scan complete. Total tracks: \(self.scannedTracks)"

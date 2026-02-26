@@ -79,6 +79,20 @@ public:
     bool delete_track_by_path(const std::string& path);
     
     /* ========================================================================
+     * Track Metadata Operations
+     * ======================================================================== */
+    
+    /**
+     * Insert or update a track's metadata.
+     */
+    bool upsert_track_metadata(const TrackMetadata& metadata);
+    
+    /**
+     * Get track metadata by ID.
+     */
+    std::optional<TrackMetadata> get_track_metadata(int64_t track_id);
+    
+    /* ========================================================================
      * Incremental Scan Support
      * ======================================================================== */
     
