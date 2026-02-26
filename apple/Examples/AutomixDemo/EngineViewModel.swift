@@ -255,7 +255,7 @@ class EngineViewModel: ObservableObject {
                             Self.saveSharedPlaylist(dbPath: dbPath, trackIds: playlistTrackIds)
                         } catch {
                             playlistTrackIds = []
-                            // Keep requestedPlaylistCount unchanged so UI shows the intended playlist size
+                            requestedPlaylistCount = 0  // 避免显示误导性的 "0 / 10"
                         }
                         try engine.play(playlist: playlist)
                         refreshCurrentTrackInfo(trackId: engine.currentTrackId)
