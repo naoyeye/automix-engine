@@ -1,0 +1,4 @@
+module CAutomix [system] {
+    header "automix.h"
+    export *
+}
