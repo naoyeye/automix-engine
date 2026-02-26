@@ -7,36 +7,41 @@
 
 import Foundation
 
-/// 封装了底层 C API 的 PlaylistHandle，负责其生命周期管理及交互。
+/// Wraps a C API `PlaylistHandle` and manages its lifecycle.
 public class AutoMixPlaylist {
     
-    // MARK: - 内部属性
+    // MARK: - Internal Properties
     
-    /// C 引擎分配的播放列表句柄指针
+    /// The playlist handle pointer allocated by the C engine.
     // internal let handle: PlaylistHandle
     
-    // MARK: - 初始化与生命周期
+    // MARK: - Initialization and Lifecycle
     
-    /// 内部初始化器，由 `AutoMixEngine` 在生成播放列表时调用
-    /// - Parameter handle: C 返回的 PlaylistHandle
+    /// Internal initializer called by `AutoMixEngine` when generating a playlist.
+    /// - Parameter handle: The `PlaylistHandle` returned by the C API.
     // internal init(handle: PlaylistHandle) {
     //     self.handle = handle
     // }
     
-    /// 当对象释放时，自动调用底层 API 清理内存资源
+    /// Internal no-argument initializer used as a placeholder until the C handle is wired up.
+    internal init() {}
+    
+    /// Calls the underlying API to release memory resources when this object is deallocated.
     deinit {
         // automix_playlist_free(handle)
+        #if DEBUG
         print("AutoMixPlaylist deinitialized: handle freed")
+        #endif
     }
     
-    // MARK: - 播放列表信息
+    // MARK: - Playlist Information
     
-    /// 获取当前播放列表中的所有曲目 ID。
-    /// 该方法封装了 `automix_playlist_get_tracks`，处理内存分配和转换。
-    /// - Returns: 包含曲目 ID 的数组
-    /// - Throws: 如果底层获取失败，则抛出 AutoMixError
+    /// Returns all track IDs in the current playlist.
+    /// Wraps `automix_playlist_get_tracks`, handling memory allocation and conversion.
+    /// - Returns: An array of track IDs.
+    /// - Throws: An `AutoMixError` if the underlying fetch fails.
     public func getTrackIDs() throws -> [Int64] {
-        // 此处为伪代码：
+        // Pseudocode:
         // var idsPointer: UnsafeMutablePointer<Int64>? = nil
         // var count: Int32 = 0
         //
@@ -45,7 +50,7 @@ public class AutoMixPlaylist {
         //     throw AutoMixError.from(code: result)
         // }
         //
-        // defer { free(idsPointer) } // 假设需要手动 free
+        // defer { free(idsPointer) }
         //
         // if let ptr = idsPointer, count > 0 {
         //     let buffer = UnsafeBufferPointer(start: ptr, count: Int(count))
@@ -53,6 +58,6 @@ public class AutoMixPlaylist {
         // }
         // return []
         
-        return [] // 占位返回
+        return [] // placeholder
     }
 }
