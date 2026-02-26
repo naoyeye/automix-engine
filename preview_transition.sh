@@ -15,7 +15,7 @@ OUTPUT="${3:-transition_preview.wav}"
 DB_FILE="temp_preview.db"
 
 # Build directory
-BUILD_DIR="./build"
+BUILD_DIR="./cmake-build"
 SCAN_TOOL="$BUILD_DIR/automix-scan"
 PLAYLIST_TOOL="$BUILD_DIR/automix-playlist"
 RENDER_TOOL="$BUILD_DIR/automix-render-transition"
