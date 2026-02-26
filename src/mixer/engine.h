@@ -128,6 +128,11 @@ public:
     void skip();
     
     /**
+     * Go to previous track (or restart current if at first track).
+     */
+    void previous();
+    
+    /**
      * Seek within current track.
      */
     void seek(float position);

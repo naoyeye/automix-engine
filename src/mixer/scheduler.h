@@ -93,6 +93,11 @@ public:
     void skip();
     
     /**
+     * Go to previous track (or restart current if at first track).
+     */
+    void previous();
+    
+    /**
      * Seek within current track.
      */
     void seek(float position);
@@ -175,6 +180,7 @@ private:
     
     // Atomic flag for control-thread -> audio-thread
     std::atomic<bool> skip_requested_{false};
+    std::atomic<bool> previous_requested_{false};
     
     // Configuration
     TransitionConfig transition_config_;

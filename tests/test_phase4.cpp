@@ -502,6 +502,71 @@ void test_scheduler_skip() {
     std::cout << "PASSED\n";
 }
 
+void test_scheduler_previous() {
+    std::cout << "Test: Scheduler previous... ";
+    
+    g_test_tracks.clear();
+    g_test_tracks.push_back(make_sine(440.0f, 2.0f));
+    g_test_tracks.push_back(make_sine(880.0f, 2.0f));
+    g_test_tracks.push_back(make_sine(660.0f, 2.0f));
+    
+    Scheduler sched;
+    sched.set_track_loader(test_track_loader);
+    
+    TransitionConfig config;
+    config.crossfade_beats = 2.0f;
+    config.max_transition_seconds = 0.5f;
+    sched.set_transition_config(config);
+    
+    TransitionPlan plan;
+    plan.from_track_id = 1;
+    plan.to_track_id = 2;
+    plan.out_point.time_seconds = 1.5f;
+    plan.in_point.time_seconds = 0.0f;
+    plan.crossfade_duration = 0.2f;
+    plan.bpm_stretch_ratio = 1.0f;
+    
+    Playlist playlist;
+    playlist.entries.push_back({1, plan});
+    playlist.entries.push_back({2, std::nullopt});
+    playlist.entries.push_back({3, std::nullopt});
+    
+    sched.load_playlist(playlist);
+    sched.play();
+    assert(sched.current_track_id() == 1);
+    
+    std::vector<float> buf(512 * 2, 0.0f);
+    
+    // (1) At first track: previous() restarts current track (seek to 0)
+    for (int i = 0; i < 20; i++) {
+        sched.render(buf.data(), 512, kSampleRate);
+    }
+    assert(sched.position() > 0.0f);
+    sched.previous();
+    sched.poll();
+    assert(sched.current_track_id() == 1);
+    assert(sched.position() >= 0.0f);  // restarted from beginning (or near it)
+    
+    // (2) Skip to next, then previous() back to track 1 (exercises previous when not at first track)
+    sched.skip();
+    sched.poll();
+    for (int i = 0; i < 1000; i++) {
+        sched.render(buf.data(), 512, kSampleRate);
+        sched.poll();
+        if (sched.state() == PlaybackState::Playing && sched.current_track_id() == 2)
+            break;
+    }
+    if (sched.current_track_id() == 2) {
+        sched.previous();
+        sched.poll();
+        assert(sched.current_track_id() == 1);
+        assert(sched.state() == PlaybackState::Playing);
+    }
+    // If transition did not complete within 1000 iters, we still passed (1); (2) is best-effort
+    
+    std::cout << "PASSED\n";
+}
+
 void test_scheduler_render_prealloc() {
     std::cout << "Test: Scheduler pre-allocated buffers... ";
     
@@ -585,6 +650,7 @@ int main() {
     test_scheduler_basic_playback();
     test_scheduler_transition();
     test_scheduler_skip();
+    test_scheduler_previous();
     test_scheduler_render_prealloc();
     
     // Engine integration

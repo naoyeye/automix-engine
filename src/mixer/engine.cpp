@@ -264,6 +264,10 @@ void Engine::skip() {
     scheduler_->skip();
 }
 
+void Engine::previous() {
+    scheduler_->previous();
+}
+
 void Engine::seek(float position) {
     scheduler_->seek(position);
 }
