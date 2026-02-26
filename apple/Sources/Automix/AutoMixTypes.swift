@@ -107,5 +107,10 @@ public struct TransitionConfig {
     /// Time in seconds to smoothly recover stretch back to 1.0 after a transition.
     public var stretchRecoverySeconds: Float = 5.0
     
-    public init() {}
+    public init(crossfadeBeats: Float = 16.0, useEqSwap: Bool = false, stretchLimit: Float = 0.06, stretchRecoverySeconds: Float = 5.0) {
+        self.crossfadeBeats = crossfadeBeats
+        self.useEqSwap = useEqSwap
+        self.stretchLimit = stretchLimit
+        self.stretchRecoverySeconds = stretchRecoverySeconds
+    }
 }

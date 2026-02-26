@@ -5,9 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Default DB path for development
-add_compile_definitions(AUTOMIX_DEFAULT_DB_PATH=\"${CMAKE_SOURCE_DIR}/automix.db\")
-
 # Build options
 option(AUTOMIX_BUILD_TESTS "Build tests" ON)
 option(AUTOMIX_BUILD_EXAMPLES "Build examples" ON)
@@ -88,7 +85,7 @@ target_include_directories(automix
 )
 
 target_link_libraries(automix
-    PRIVATE
+    PUBLIC
         ${AVFORMAT_LIBRARIES}
         ${AVCODEC_LIBRARIES}
         ${AVUTIL_LIBRARIES}
@@ -97,7 +94,7 @@ target_link_libraries(automix
 )
 
 target_link_directories(automix
-    PRIVATE
+    PUBLIC
         ${AVFORMAT_LIBRARY_DIRS}
         ${AVCODEC_LIBRARY_DIRS}
         ${AVUTIL_LIBRARY_DIRS}
@@ -108,8 +105,8 @@ target_link_directories(automix
 if(ESSENTIA_FOUND)
     target_compile_definitions(automix PRIVATE AUTOMIX_HAS_ESSENTIA)
     target_include_directories(automix PRIVATE ${ESSENTIA_INCLUDE_DIRS})
-    target_link_libraries(automix PRIVATE ${ESSENTIA_LIBRARIES})
-    target_link_directories(automix PRIVATE ${ESSENTIA_LIBRARY_DIRS})
+    target_link_libraries(automix PUBLIC ${ESSENTIA_LIBRARIES})
+    target_link_directories(automix PUBLIC ${ESSENTIA_LIBRARY_DIRS})
     message(STATUS "Essentia found - full analysis enabled")
 else()
     message(STATUS "Essentia not found - using simplified analysis")
@@ -119,8 +116,8 @@ endif()
 if(RUBBERBAND_FOUND)
     target_compile_definitions(automix PRIVATE AUTOMIX_HAS_RUBBERBAND)
     target_include_directories(automix PRIVATE ${RUBBERBAND_INCLUDE_DIRS})
-    target_link_libraries(automix PRIVATE ${RUBBERBAND_LIBRARIES})
-    target_link_directories(automix PRIVATE ${RUBBERBAND_LIBRARY_DIRS})
+    target_link_libraries(automix PUBLIC ${RUBBERBAND_LIBRARIES})
+    target_link_directories(automix PUBLIC ${RUBBERBAND_LIBRARY_DIRS})
     message(STATUS "Rubber Band found - time-stretch enabled")
 else()
     message(STATUS "Rubber Band not found - time-stretch disabled")
@@ -133,7 +130,7 @@ if(APPLE)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
     
     target_link_libraries(automix
-        PRIVATE
+        PUBLIC
             ${COREAUDIO_FRAMEWORK}
             ${AUDIOTOOLBOX_FRAMEWORK}
             ${COREFOUNDATION_FRAMEWORK}
@@ -142,19 +139,25 @@ endif()
 
 # CLI tools
 if(AUTOMIX_BUILD_CLI)
+    set(CLI_DB_PATH_SOURCES src/cli/db_path.cpp)
+    set(CLI_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src/cli)
+
     # automix-scan
-    add_executable(automix-scan src/cli/scan_main.cpp)
+    add_executable(automix-scan src/cli/scan_main.cpp ${CLI_DB_PATH_SOURCES})
+    target_include_directories(automix-scan PRIVATE ${CLI_INCLUDE_DIRS})
     target_link_libraries(automix-scan PRIVATE automix)
-    
+
     # automix-playlist
-    add_executable(automix-playlist src/cli/playlist_main.cpp)
+    add_executable(automix-playlist src/cli/playlist_main.cpp ${CLI_DB_PATH_SOURCES})
+    target_include_directories(automix-playlist PRIVATE ${CLI_INCLUDE_DIRS})
     target_link_libraries(automix-playlist PRIVATE automix)
-    
+
     # automix-play
-    add_executable(automix-play src/cli/play_main.cpp)
+    add_executable(automix-play src/cli/play_main.cpp ${CLI_DB_PATH_SOURCES})
+    target_include_directories(automix-play PRIVATE ${CLI_INCLUDE_DIRS})
     target_link_libraries(automix-play PRIVATE automix)
 
-    # automix-render-transition
+    # automix-render-transition (db path is explicit argument)
     add_executable(automix-render-transition src/cli/render_transition.cpp)
     target_link_libraries(automix-render-transition PRIVATE automix)
 endif()

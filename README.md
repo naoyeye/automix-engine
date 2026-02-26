@@ -85,11 +85,40 @@ cmake --build .
 
 ## 使用
 
+### 数据库路径
+
+CLI 工具与 Demo 共用同一套数据库路径规则，便于扫描与播放数据一致：
+
+| 优先级 | 来源 | 说明 |
+|-------|------|------|
+| 1 | `-d` / `--database` | CLI 命令行参数（仅 CLI） |
+| 2 | `AUTOMIX_DB` 环境变量 | 两者均支持 |
+| 3 | 平台默认路径 | 见下表 |
+
+**默认路径**：
+
+| 平台 | 默认路径 |
+|------|----------|
+| macOS | `~/Library/Application Support/Automix/automix.db` |
+| Linux | `~/.local/share/automix/automix.db`（或 `$XDG_DATA_HOME/automix/automix.db`） |
+
+**共享播放列表**：CLI 生成播放列表时会保存到 `automix_playlist.txt`（与数据库同目录）。Demo 播放时优先读取该文件，实现 CLI 与 Demo 播放列表一致。Demo 也可在界面中创建播放列表（指定 seed 和 count），同样会保存到共享文件。
+
+设置 `AUTOMIX_DB` 可指定自定义数据库路径，例如：
+
+```bash
+export AUTOMIX_DB=/path/to/my/automix.db
+./automix-scan /path/to/music
+```
+
 ### CLI 工具
 
 ```bash
-# 扫描音乐目录
+# 扫描音乐目录（使用默认数据库路径）
 ./automix-scan /path/to/music
+
+# 指定数据库路径
+./automix-scan -d ./automix.db /path/to/music
 
 # 列出曲库
 ./automix-playlist --list
@@ -119,8 +148,10 @@ cmake --build .
 # 编译
 cd cmake-build && make automix-render-transition
 
-# 使用 (通常通过脚本调用)
-./automix-render-transition automix.db {track_id_1} {track_id_2} output.wav
+# 使用 (通常通过脚本调用，数据库路径需显式指定)
+./automix-render-transition <db_path> {track_id_1} {track_id_2} output.wav
+# 例如使用默认数据库：
+./automix-render-transition ~/Library/Application\ Support/Automix/automix.db 1 2 output.wav
 ```
 
 **2. 一键预览脚本 (`preview_transition.sh`)**
@@ -159,16 +190,60 @@ automix_playlist_free(playlist);
 automix_destroy(engine);
 ```
 
+### Swift Automix Demo (macOS)
+
+基于 SwiftUI 的图形化演示应用，展示 AutoMix 引擎的完整功能。
+
+**前置条件**：需先完成 C++ 库的编译（见上文「编译」），并确保 `cmake-build` 目录下已生成 `libautomix.a`。
+
+```bash
+# 1. 编译 C++ 库
+mkdir -p cmake-build && cd cmake-build
+cmake ..
+cmake --build .
+
+# 2. 返回项目根目录，使用 Swift Package Manager 运行 Demo
+cd ..
+swift run AutomixDemo
+```
+
+**功能说明**：
+
+| 功能 | 说明 |
+|------|------|
+| 扫描曲库 | 点击「Scan Music Directory」选择音乐目录，自动分析 BPM、调性等特征 |
+| 播放/暂停 | 首次播放时自动以曲库第一首为种子生成 10 首播放列表 |
+| 上一首/下一首 | 在播放列表中切换曲目，支持无缝过渡 |
+| 状态显示 | 显示当前曲目名称/艺术家/封面、播放进度及在播放列表中的位置等 |
+
+**注意**：Demo 与 CLI 共用同一默认数据库路径（见上文「数据库路径」）。未设置 `AUTOMIX_DB` 时，数据保存在 `~/Library/Application Support/Automix/automix.db`。
+
 ### Swift 集成 (macOS/iOS)
 
-```swift
-// 使用 C API 或创建 Swift wrapper
-let engine = automix_create("library.db")
-defer { automix_destroy(engine) }
+项目提供 Swift 封装 `AutoMixEngine`（`import Automix`），推荐使用：
 
-automix_scan(engine, musicPath, 1)
-// ...
+```swift
+import Automix
+
+// 创建引擎（自动管理 C 引擎生命周期）
+let engine = try AutoMixEngine(dbPath: "library.db")
+
+// 扫描曲库
+try engine.scan(musicDir: "/path/to/music", recursive: true)
+
+// 生成播放列表并播放
+let playlist = try engine.generatePlaylist(seedTrackId: seedId, count: 10)
+try engine.play(playlist: playlist)
+
+// 订阅状态更新（Combine）
+engine.statusPublisher
+    .sink { status in
+        print("Track \(status.currentTrackId), position: \(status.position)s")
+    }
+    .store(in: &cancellables)
 ```
+
+也可直接使用底层 C API（`import CAutomix`），参见 `include/automix/automix.h`。
 
 ## 项目结构
 

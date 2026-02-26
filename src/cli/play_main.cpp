@@ -9,6 +9,7 @@
  */
 
 #include "automix/automix.h"
+#include "db_path.h"
 #include <iostream>
 #include <iomanip>
 #include <string>
@@ -52,14 +53,13 @@ void status_callback(
 }
 
 void print_usage(const char* program) {
-    std::string default_db = "automix.db";
-#ifdef AUTOMIX_DEFAULT_DB_PATH
-    default_db = AUTOMIX_DEFAULT_DB_PATH;
+    std::string default_hint = "AUTOMIX_DB or ~/Library/Application Support/Automix/automix.db";
+#ifdef __linux__
+    default_hint = "AUTOMIX_DB or ~/.local/share/automix/automix.db";
 #endif
-
     std::cerr << "Usage: " << program << " [options] --seed <track_id>\n"
               << "\nOptions:\n"
-              << "  -d, --database <path>  Database file path (default: " << default_db << ")\n"
+              << "  -d, --database <path>  Database file path (default: " << default_hint << ")\n"
               << "  -s, --seed <id>        Seed track ID (required)\n"
               << "  -c, --count <n>        Number of tracks (default: 10)\n"
               << "  -r, --random-seed <n>  Random seed for reproducible playlists (0 = random)\n"
@@ -70,11 +70,7 @@ void print_usage(const char* program) {
 }
 
 int main(int argc, char* argv[]) {
-#ifdef AUTOMIX_DEFAULT_DB_PATH
-    std::string db_path = AUTOMIX_DEFAULT_DB_PATH;
-#else
-    std::string db_path = "automix.db";
-#endif
+    std::string db_path_arg;  // From -d, empty if not specified
     int64_t seed_id = -1;
     int count = 10;
     uint32_t random_seed = 0;
@@ -88,7 +84,7 @@ int main(int argc, char* argv[]) {
             print_usage(argv[0]);
             return 0;
         } else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--database") == 0) {
-            if (i + 1 < argc) db_path = argv[++i];
+            if (i + 1 < argc) db_path_arg = argv[++i];
         } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--seed") == 0) {
             if (i + 1 < argc) seed_id = std::stoll(argv[++i]);
         } else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--count") == 0) {
@@ -109,6 +105,8 @@ int main(int argc, char* argv[]) {
         print_usage(argv[0]);
         return 1;
     }
+    
+    std::string db_path = automix::cli::resolve_db_path(db_path_arg);
     
     // Setup signal handler
     signal(SIGINT, signal_handler);
@@ -147,10 +145,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    // Print playlist
+    // Print playlist and save to shared file for Demo
     int64_t* track_ids = nullptr;
     int track_count = 0;
     if (automix_playlist_get_tracks(playlist, &track_ids, &track_count) == AUTOMIX_OK) {
+        automix::cli::save_playlist(db_path, track_ids, track_count);
+
         std::cout << "\nPlaylist (" << track_count << " tracks):\n";
         for (int i = 0; i < track_count; ++i) {
             AutoMixTrackInfo info;
