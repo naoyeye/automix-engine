@@ -268,7 +268,9 @@ void Scheduler::poll() {
         if (current_index_ == 0) {
             // Cancel any in-progress transition before restarting
             transitioning_ = false;
-            transition_finished_ = false;
+            transition_finished_.store(false);
+            transition_trigger_pending_.store(false);
+            playback_finished_.store(false);
             crossfader_.stop_automation();
             next_deck_->pause();
             next_deck_->unload();
@@ -280,6 +282,9 @@ void Scheduler::poll() {
         } else {
             // Go to previous track
             transitioning_ = false;
+            transition_finished_.store(false);
+            transition_trigger_pending_.store(false);
+            playback_finished_.store(false);
             crossfader_.stop_automation();
             next_deck_->pause();
             next_deck_->unload();
