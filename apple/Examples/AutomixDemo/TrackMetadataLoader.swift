@@ -49,7 +49,8 @@ enum TrackMetadataLoader {
                 }
             }
         } catch {
-            // 忽略加载失败，返回空元数据
+            // 记录加载失败原因，有助于调试（权限问题、格式不支持等）
+            print("Failed to load metadata for \(path): \(error)")
         }
         
         return TrackMetadata(title: title, artist: artist, album: album, artwork: artwork)

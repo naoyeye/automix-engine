@@ -44,6 +44,7 @@ class EngineViewModel: ObservableObject {
     }
     
     deinit {
+        metadataTask?.cancel()
         stopPollTimer()
     }
     
@@ -116,6 +117,7 @@ class EngineViewModel: ObservableObject {
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, let engine = self.engine else { return }
+                guard engine.state != .stopped else { return }
                 engine.poll()
                 if self.isPlaying, engine.state != .transitioning {
                     self.position = engine.position
@@ -253,7 +255,7 @@ class EngineViewModel: ObservableObject {
                             Self.saveSharedPlaylist(dbPath: dbPath, trackIds: playlistTrackIds)
                         } catch {
                             playlistTrackIds = []
-                            requestedPlaylistCount = 0
+                            // Keep requestedPlaylistCount unchanged so UI shows the intended playlist size
                         }
                         try engine.play(playlist: playlist)
                         refreshCurrentTrackInfo(trackId: engine.currentTrackId)
@@ -271,21 +273,9 @@ class EngineViewModel: ObservableObject {
     
     func next() {
         guard let engine = engine else { return }
-        let savedTrackId = currentTrackId
-        let savedPosition = position
-        
-        if currentTrackIndex > 0, currentTrackIndex < playlistTrackIds.count {
-            let nextId = playlistTrackIds[currentTrackIndex]
-            currentTrackId = nextId
-            position = 0
-            refreshCurrentTrackInfo(trackId: nextId)
-        }
         do {
             try engine.next()
         } catch {
-            currentTrackId = savedTrackId
-            position = savedPosition
-            refreshCurrentTrackInfo(trackId: savedTrackId)
             statusMessage = "Next failed: \(error)"
         }
     }
@@ -312,21 +302,9 @@ class EngineViewModel: ObservableObject {
 
     func previous() {
         guard let engine = engine else { return }
-        let savedTrackId = currentTrackId
-        let savedPosition = position
-        
-        if currentTrackIndex > 1, currentTrackIndex - 2 < playlistTrackIds.count {
-            let prevId = playlistTrackIds[currentTrackIndex - 2]
-            currentTrackId = prevId
-            position = 0
-            refreshCurrentTrackInfo(trackId: prevId)
-        }
         do {
             try engine.previous()
         } catch {
-            currentTrackId = savedTrackId
-            position = savedPosition
-            refreshCurrentTrackInfo(trackId: savedTrackId)
             statusMessage = "Previous failed: \(error)"
         }
     }
