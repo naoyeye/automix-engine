@@ -20,6 +20,8 @@ class EngineViewModel: ObservableObject {
     @Published var currentTrackMetadata: TrackMetadata?
     /// 当前播放列表中的曲目 ID 列表（用于计算「第几首 / 共几首」）
     @Published var playlistTrackIds: [Int64] = []
+    /// 生成播放列表时请求的曲目数（getTrackIDs 失败时用于 fallback 的总数）
+    @Published var requestedPlaylistCount: Int = 0
     
     /// 当前是第几首（1-based）
     var currentTrackIndex: Int {
@@ -27,8 +29,10 @@ class EngineViewModel: ObservableObject {
         return idx + 1
     }
     
-    /// 播放列表总曲数
-    var totalPlaylistCount: Int { playlistTrackIds.count }
+    /// 播放列表总曲数：优先使用请求数量，其次用实际列表长度，取较大值以避免逐首递增
+    var totalPlaylistCount: Int {
+        max(requestedPlaylistCount, playlistTrackIds.count)
+    }
     
     private var engine: AutoMixEngine?
     private var cancellables = Set<AnyCancellable>()
@@ -163,13 +167,14 @@ class EngineViewModel: ObservableObject {
         self.currentTrackId = status.currentTrackId
         self.position = status.position
         
-        // 曲目变化时刷新 TrackInfo
         if status.currentTrackId != 0 {
             refreshCurrentTrackInfo(trackId: status.currentTrackId)
-        } else {
+            if !playlistTrackIds.contains(status.currentTrackId) {
+                playlistTrackIds.append(status.currentTrackId)
+            }
+        } else if status.state == .stopped {
             currentTrackInfo = nil
             currentTrackMetadata = nil
-            playlistTrackIds = []
         }
     }
     
@@ -256,8 +261,14 @@ class EngineViewModel: ObservableObject {
                     // Generate random playlist
                     let allTracks = try engine.searchTracks(pattern: "%")
                     if let seed = allTracks.first {
-                        let playlist = try engine.generatePlaylist(seedTrackId: seed, count: 10)
-                        playlistTrackIds = (try? playlist.getTrackIDs()) ?? []
+                        let playlistCount = 10
+                        let playlist = try engine.generatePlaylist(seedTrackId: seed, count: playlistCount)
+                        requestedPlaylistCount = playlistCount
+                        do {
+                            playlistTrackIds = try playlist.getTrackIDs()
+                        } catch {
+                            playlistTrackIds = []
+                        }
                         try engine.play(playlist: playlist)
                         refreshCurrentTrackInfo(trackId: engine.currentTrackId)
                     } else {
