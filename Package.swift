@@ -13,6 +13,9 @@ let package = Package(
         .library(
             name: "Automix",
             targets: ["Automix"]),
+        .executable(
+            name: "AutomixDemo",
+            targets: ["AutomixDemo"])
     ],
     targets: [
         .systemLibrary(
@@ -24,7 +27,7 @@ let package = Package(
             dependencies: ["CAutomix"],
             path: "apple/Sources/Automix",
             linkerSettings: [
-                .unsafeFlags(["-L", "cmake-build"]),
+                .unsafeFlags(["-L", "cmake-build", "-L", "/opt/homebrew/lib", "-L", "/usr/local/lib"]),
                 .linkedLibrary("automix"),
                 .linkedLibrary("avformat"),
                 .linkedLibrary("avcodec"),
@@ -43,6 +46,11 @@ let package = Package(
                 .linkedFramework("AudioToolbox"),
                 .linkedFramework("CoreFoundation")
             ]
+        ),
+        .executableTarget(
+            name: "AutomixDemo",
+            dependencies: ["Automix"],
+            path: "apple/Examples/AutomixDemo"
         ),
         .testTarget(
             name: "AutomixTests",

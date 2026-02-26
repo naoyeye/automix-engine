@@ -230,6 +230,10 @@ AutoMixError automix_playlist_get_tracks(
     return AUTOMIX_OK;
 }
 
+void automix_free_track_ids(int64_t* ids) {
+    delete[] ids;
+}
+
 void automix_playlist_free(PlaylistHandle playlist) {
     delete static_cast<PlaylistHandleImpl*>(playlist);
 }

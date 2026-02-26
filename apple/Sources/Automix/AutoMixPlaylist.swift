@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CAutomix
 
 /// Wraps a C API `PlaylistHandle` and manages its lifecycle.
 public class AutoMixPlaylist {
@@ -13,22 +14,21 @@ public class AutoMixPlaylist {
     // MARK: - Internal Properties
     
     /// The playlist handle pointer allocated by the C engine.
-    // internal let handle: PlaylistHandle
+    internal let handle: PlaylistHandle?
     
     // MARK: - Initialization and Lifecycle
     
     /// Internal initializer called by `AutoMixEngine` when generating a playlist.
     /// - Parameter handle: The `PlaylistHandle` returned by the C API.
-    // internal init(handle: PlaylistHandle) {
-    //     self.handle = handle
-    // }
-    
-    /// Internal no-argument initializer used as a placeholder until the C handle is wired up.
-    internal init() {}
+    internal init(handle: PlaylistHandle) {
+        self.handle = handle
+    }
     
     /// Calls the underlying API to release memory resources when this object is deallocated.
     deinit {
-        // automix_playlist_free(handle)
+        if let h = handle {
+            automix_playlist_free(h)
+        }
         #if DEBUG
         print("AutoMixPlaylist deinitialized: handle freed")
         #endif
@@ -41,23 +41,28 @@ public class AutoMixPlaylist {
     /// - Returns: An array of track IDs.
     /// - Throws: An `AutoMixError` if the underlying fetch fails.
     public func getTrackIDs() throws -> [Int64] {
-        // Pseudocode:
-        // var idsPointer: UnsafeMutablePointer<Int64>? = nil
-        // var count: Int32 = 0
-        //
-        // let result = automix_playlist_get_tracks(handle, &idsPointer, &count)
-        // guard result == AUTOMIX_OK else {
-        //     throw AutoMixError.from(code: result)
-        // }
-        //
-        // defer { free(idsPointer) }
-        //
-        // if let ptr = idsPointer, count > 0 {
-        //     let buffer = UnsafeBufferPointer(start: ptr, count: Int(count))
-        //     return Array(buffer)
-        // }
-        // return []
+        guard let h = handle else { return [] }
         
-        return [] // placeholder
+        var outIds: UnsafeMutablePointer<Int64>?
+        var outCount: Int32 = 0
+        
+        let result = automix_playlist_get_tracks(h, &outIds, &outCount)
+        
+        guard result == AUTOMIX_OK else {
+            throw AutoMixError.from(code: result.rawValue)
+        }
+        
+        defer {
+            if let ptr = outIds {
+                automix_free_track_ids(ptr)
+            }
+        }
+        
+        guard let ids = outIds, outCount > 0 else {
+            return []
+        }
+        
+        let buffer = UnsafeBufferPointer(start: ids, count: Int(outCount))
+        return Array(buffer)
     }
 }

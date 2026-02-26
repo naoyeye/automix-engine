@@ -56,4 +56,37 @@ final class AutomixTests: XCTestCase {
         XCTAssertEqual(info.duration, 300.0)
         XCTAssertEqual(info.analyzedAt, 1_700_000_000)
     }
+
+    func testAutoMixErrorFromCode() throws {
+        XCTAssertEqual(AutoMixError.from(code: -1), .invalidArgument)
+        XCTAssertEqual(AutoMixError.from(code: -2), .fileNotFound)
+        XCTAssertEqual(AutoMixError.from(code: -3), .decodeFailed)
+        XCTAssertEqual(AutoMixError.from(code: -4), .analysisFailed)
+        XCTAssertEqual(AutoMixError.from(code: -5), .databaseError)
+        XCTAssertEqual(AutoMixError.from(code: -6), .playbackError)
+        XCTAssertEqual(AutoMixError.from(code: -7), .outOfMemory)
+        XCTAssertEqual(AutoMixError.from(code: -8), .notInitialized)
+        if case .unknown(-99) = AutoMixError.from(code: -99) { } else {
+            XCTFail("Expected unknown(-99)")
+        }
+    }
+
+    /// End-to-end: Engine creation, trackInfo(id:) returns nil for non-existent track, searchTracks returns empty.
+    /// Verifies the C→Swift type bridge works without crashing.
+    func testTrackInfoAndSearchTracksBridge() throws {
+        let dbPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("automix_test_\(UUID().uuidString).db")
+            .path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let engine = try AutoMixEngine(dbPath: dbPath)
+
+        let info = try engine.trackInfo(id: 1)
+        XCTAssertNil(info, "Empty DB should return nil for trackInfo")
+
+        let ids = try engine.searchTracks(pattern: "%")
+        XCTAssertTrue(ids.isEmpty, "Empty DB should return empty search results")
+
+        XCTAssertEqual(engine.trackCount(), 0)
+    }
 }

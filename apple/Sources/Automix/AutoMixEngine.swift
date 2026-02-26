@@ -7,15 +7,37 @@
 
 import Foundation
 import CAutomix
+import Combine
+
+/// Represents the current status of the AutoMix engine.
+public struct AutoMixStatus {
+    public let state: AutoMixPlaybackState
+    public let currentTrackId: Int64
+    public let position: Float
+    public let nextTrackId: Int64
+}
 
 /// The core engine class of the Swift wrapper. Manages the lifecycle of the underlying
 /// C `AutoMixEngine` instance, library scanning, playlist generation, and audio control.
-public class AutoMixEngine {
+public class AutoMixEngine: @unchecked Sendable {
     
     // MARK: - Internal Properties
     
     /// Pointer to the C engine instance; its lifecycle is controlled by this Swift class.
     internal var enginePtr: OpaquePointer?
+    
+    // MARK: - Public Properties (Reactive)
+    
+    /// Combine publisher for engine status updates.
+    public let statusPublisher = PassthroughSubject<AutoMixStatus, Never>()
+    
+    /// AsyncStream for engine status updates.
+    private var statusContinuation: AsyncStream<AutoMixStatus>.Continuation?
+    public lazy var statusStream: AsyncStream<AutoMixStatus> = {
+        AsyncStream { continuation in
+            self.statusContinuation = continuation
+        }
+    }()
     
     // MARK: - Initialization and Deinitialization
     
@@ -27,16 +49,48 @@ public class AutoMixEngine {
         guard self.enginePtr != nil else {
             throw AutoMixError.notInitialized
         }
+        
+        // Setup status callback
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        let callback: AutoMixStatusCallback = { state, currentTrackId, position, nextTrackId, userData in
+             guard let userData = userData else { return }
+             let engine = Unmanaged<AutoMixEngine>.fromOpaque(userData).takeUnretainedValue()
+             engine.handleStatusUpdate(state: state, currentTrackId: currentTrackId, position: position, nextTrackId: nextTrackId)
+        }
+        automix_set_status_callback(self.enginePtr, callback, selfPtr)
     }
     
     /// Calls the underlying `automix_destroy` to release resources when the engine is deallocated.
     deinit {
+        statusContinuation?.finish()
         if let ptr = enginePtr {
             automix_destroy(ptr)
         }
         #if DEBUG
         print("AutoMixEngine deinitialized: engine destroyed")
         #endif
+    }
+    
+    // MARK: - Internal Callback Handlers
+    
+    fileprivate func handleStatusUpdate(state: CAutomix.AutoMixPlaybackState, currentTrackId: Int64, position: Float, nextTrackId: Int64) {
+        // Convert C enum to Swift enum
+        let swiftState = AutoMixPlaybackState(rawValue: Int(state.rawValue)) ?? .stopped
+        
+        let status = AutoMixStatus(
+            state: swiftState,
+            currentTrackId: currentTrackId,
+            position: position,
+            nextTrackId: nextTrackId
+        )
+        
+        // Dispatch to main thread for UI updates if needed, or keep on background.
+        // For Combine/AsyncStream, it's often safer to let the consumer decide dispatching,
+        // but for UI-heavy apps, publishing on MainActor might be preferred.
+        // Here we publish directly.
+        
+        statusPublisher.send(status)
+        statusContinuation?.yield(status)
     }
     
     // MARK: - Library Scanning
@@ -52,8 +106,73 @@ public class AutoMixEngine {
     /// - Returns: The number of tracks successfully analyzed.
     /// - Throws: An `AutoMixError` if scanning fails or a database error occurs.
     public func scan(musicDir: String, recursive: Bool, progress: ((String, Int, Int) -> Void)? = nil) throws -> Int {
-        // TODO: Implement C callback wrapping logic and call automix_scan / automix_scan_with_callback
-        return 0 // placeholder
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        
+        if let progress = progress {
+            // We need a context to pass the closure to the C callback
+            let context = ScanContext(callback: progress)
+            let contextPtr = Unmanaged.passRetained(context).toOpaque()
+            
+            defer {
+                Unmanaged<ScanContext>.fromOpaque(contextPtr).release()
+            }
+            
+            let callback: AutoMixScanCallback = { currentFile, filesProcessed, filesTotal, userData in
+                guard let userData = userData else { return }
+                let context = Unmanaged<ScanContext>.fromOpaque(userData).takeUnretainedValue()
+                let filePath = currentFile.map { String(cString: $0) } ?? ""
+                context.callback(filePath, Int(filesProcessed), Int(filesTotal))
+            }
+            
+            let result = automix_scan_with_callback(
+                engine,
+                musicDir,
+                recursive ? 1 : 0,
+                callback,
+                contextPtr
+            )
+            
+            if result < 0 {
+                throw AutoMixError.from(code: Int32(result))
+            }
+            return Int(result)
+        } else {
+            let result = automix_scan(engine, musicDir, recursive ? 1 : 0)
+            if result < 0 {
+                throw AutoMixError.from(code: Int32(result))
+            }
+            return Int(result)
+        }
+    }
+    
+    /// Async version of scan.
+    public func scan(musicDir: String, recursive: Bool) async throws -> Int {
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let result = try self.scan(musicDir: musicDir, recursive: recursive, progress: nil)
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+    
+    /// Async version of scan with progress stream.
+    public func scan(musicDir: String, recursive: Bool) -> AsyncThrowingStream<(String, Int, Int), Error> {
+        return AsyncThrowingStream { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    _ = try self.scan(musicDir: musicDir, recursive: recursive) { file, processed, total in
+                        continuation.yield((file, processed, total))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
     }
     
     // MARK: - Track Retrieval
@@ -61,8 +180,8 @@ public class AutoMixEngine {
     /// Returns the number of tracks currently in the library.
     /// - Returns: The total number of analyzed tracks in the library.
     public func trackCount() -> Int {
-        // return Int(automix_get_track_count(enginePtr))
-        return 0 // placeholder
+        guard let engine = enginePtr else { return 0 }
+        return Int(automix_get_track_count(engine))
     }
     
     /// Retrieves detailed information for a track by its ID.
@@ -71,8 +190,38 @@ public class AutoMixEngine {
     /// - Returns: A `TrackInfo` struct if found, or `nil` if the track does not exist.
     /// - Throws: An `AutoMixError` if the underlying query fails.
     public func trackInfo(id: Int64) throws -> TrackInfo? {
-        // TODO: Call automix_get_track_info and map result to TrackInfo
-        return nil // placeholder
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        
+        var cInfo = AutoMixTrackInfo()
+        let result = automix_get_track_info(engine, id, &cInfo)
+        
+        if result == AUTOMIX_ERROR_FILE_NOT_FOUND {
+            return nil
+        }
+        if result != AUTOMIX_OK {
+            throw AutoMixError.from(code: result.rawValue)
+        }
+        
+        let path = cInfo.path.map { String(cString: $0) } ?? ""
+        let key = cInfo.key.map { String(cString: $0) } ?? ""
+        
+        defer {
+            if let ptr = cInfo.path {
+                free(UnsafeMutablePointer(mutating: ptr))
+            }
+            if let ptr = cInfo.key {
+                free(UnsafeMutablePointer(mutating: ptr))
+            }
+        }
+        
+        return TrackInfo(
+            id: cInfo.id,
+            path: path,
+            bpm: cInfo.bpm,
+            key: key,
+            duration: cInfo.duration,
+            analyzedAt: cInfo.analyzed_at
+        )
     }
     
     /// Searches for tracks matching the given pattern.
@@ -81,8 +230,31 @@ public class AutoMixEngine {
     /// - Returns: An array of matching track IDs.
     /// - Throws: An `AutoMixError` if the search fails.
     public func searchTracks(pattern: String) throws -> [Int64] {
-        // TODO: Call automix_search_tracks
-        return [] // placeholder
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        
+        var outIds: UnsafeMutablePointer<Int64>?
+        var outCount: Int32 = 0
+        
+        let result = pattern.withCString { cPattern in
+            automix_search_tracks(engine, cPattern, &outIds, &outCount)
+        }
+        
+        guard result == AUTOMIX_OK else {
+            throw AutoMixError.from(code: result.rawValue)
+        }
+        
+        defer {
+            if let ptr = outIds {
+                automix_free_track_ids(ptr)
+            }
+        }
+        
+        guard let ids = outIds, outCount > 0 else {
+            return []
+        }
+        
+        let buffer = UnsafeBufferPointer(start: ids, count: Int(outCount))
+        return Array(buffer)
     }
     
     // MARK: - Playlist Generation
@@ -95,15 +267,64 @@ public class AutoMixEngine {
     /// - Returns: A populated `AutoMixPlaylist` instance.
     /// - Throws: An `AutoMixError` if generation fails (e.g., seed track not found).
     public func generatePlaylist(seedTrackId: Int64, count: Int, rules: PlaylistRules? = nil) throws -> AutoMixPlaylist {
-        // TODO: Build C struct rules, call automix_generate_playlist, return AutoMixPlaylist(handle:)
-        return AutoMixPlaylist() // placeholder — replace with AutoMixPlaylist(handle:) once C handle integration is complete
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        
+        let handle: PlaylistHandle?
+        if let rules = rules {
+            var cRules = AutoMixPlaylistRules(
+                bpm_tolerance: rules.bpmTolerance,
+                allow_key_change: rules.allowKeyChange ? 1 : 0,
+                max_key_distance: Int32(rules.maxKeyDistance),
+                min_energy_match: rules.minEnergyMatch,
+                style_filter: nil,
+                allow_cross_style: rules.allowCrossStyle ? 1 : 0,
+                random_seed: rules.randomSeed
+            )
+            var cStyleStrings: [UnsafeMutablePointer<CChar>] = []
+            defer { cStyleStrings.forEach { free($0) } }
+            
+            if let styleFilter = rules.styleFilter, !styleFilter.isEmpty {
+                for s in styleFilter {
+                    if let dup = s.withCString({ strdup($0) }) {
+                        cStyleStrings.append(dup)
+                    }
+                }
+                let styleFilterArray = cStyleStrings.map { UnsafePointer<CChar>($0) } + [nil]
+                handle = styleFilterArray.withUnsafeBufferPointer { buf in
+                    var rulesWithFilter = cRules
+                    rulesWithFilter.style_filter = UnsafeMutablePointer(mutating: buf.baseAddress)
+                    return automix_generate_playlist(engine, seedTrackId, Int32(count), &rulesWithFilter)
+                }
+            } else {
+                handle = automix_generate_playlist(engine, seedTrackId, Int32(count), &cRules)
+            }
+        } else {
+            handle = automix_generate_playlist(engine, seedTrackId, Int32(count), nil)
+        }
+        
+        guard let h = handle else {
+            throw AutoMixError.fileNotFound
+        }
+        return AutoMixPlaylist(handle: h)
+    }
+    
+    /// Creates a playlist from an explicit list of track IDs.
     /// The engine will compute the best transitions between the specified tracks.
     /// - Parameter trackIds: An array of track IDs.
     /// - Returns: A populated `AutoMixPlaylist` instance.
     /// - Throws: An `AutoMixError` if creation fails.
     public func createPlaylist(trackIds: [Int64]) throws -> AutoMixPlaylist {
-        // TODO: Call automix_create_playlist, return AutoMixPlaylist(handle:)
-        return AutoMixPlaylist() // placeholder — replace with AutoMixPlaylist(handle:) once C handle integration is complete
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        guard !trackIds.isEmpty else { throw AutoMixError.invalidArgument }
+        
+        let handle = trackIds.withUnsafeBufferPointer { buf in
+            automix_create_playlist(engine, buf.baseAddress, Int32(buf.count))
+        }
+        
+        guard let h = handle else {
+            throw AutoMixError.fileNotFound
+        }
+        return AutoMixPlaylist(handle: h)
     }
     
     // MARK: - Playback Control
@@ -112,77 +333,118 @@ public class AutoMixEngine {
     /// - Parameter playlist: The `AutoMixPlaylist` to play.
     /// - Throws: An `AutoMixError` if playback fails to start.
     public func play(playlist: AutoMixPlaylist) throws {
-        // TODO: Call automix_play(enginePtr, playlist.handle) once AutoMixPlaylist.handle is implemented
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        guard let handle = playlist.handle else { throw AutoMixError.invalidArgument }
+        let result = automix_play(engine, handle)
+        if result != AUTOMIX_OK {
+            throw AutoMixError.from(code: result.rawValue)
+        }
     }
     
     /// Pauses playback.
     public func pause() throws {
-        // TODO: Call automix_pause
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        let result = automix_pause(engine)
+        if result != AUTOMIX_OK {
+             throw AutoMixError.from(code: result.rawValue)
+        }
     }
     
     /// Resumes playback.
     public func resume() throws {
-        // TODO: Call automix_resume
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        let result = automix_resume(engine)
+        if result != AUTOMIX_OK {
+             throw AutoMixError.from(code: result.rawValue)
+        }
     }
     
     /// Stops playback completely.
     public func stop() throws {
-        // TODO: Call automix_stop
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        let result = automix_stop(engine)
+        if result != AUTOMIX_OK {
+             throw AutoMixError.from(code: result.rawValue)
+        }
     }
     
     /// Skips to the next track, triggering an immediate transition.
     public func next() throws {
-        // TODO: Call automix_skip
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        let result = automix_skip(engine)
+        if result != AUTOMIX_OK {
+             throw AutoMixError.from(code: result.rawValue)
+        }
     }
     
     /// Returns to the previous track. If on the first track, restarts it from the beginning.
     public func previous() throws {
-        // TODO: Call automix_previous
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        let result = automix_previous(engine)
+        if result != AUTOMIX_OK {
+             throw AutoMixError.from(code: result.rawValue)
+        }
     }
     
     /// Seeks to a specific position within the currently playing track.
     /// - Parameter seconds: The target position in seconds.
     public func seek(seconds: Float) throws {
-        // TODO: Call automix_seek
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        let result = automix_seek(engine, seconds)
+        if result != AUTOMIX_OK {
+             throw AutoMixError.from(code: result.rawValue)
+        }
     }
     
-    // MARK: - State Queries and Callbacks
+    /// Sets the transition configuration for crossfades and EQ.
+    /// - Parameter config: The transition configuration to apply.
+    public func setTransitionConfig(_ config: TransitionConfig) {
+        guard let engine = enginePtr else { return }
+        var cConfig = AutoMixTransitionConfig(
+            crossfade_beats: config.crossfadeBeats,
+            use_eq_swap: config.useEqSwap ? 1 : 0,
+            stretch_limit: config.stretchLimit,
+            stretch_recovery_seconds: config.stretchRecoverySeconds
+        )
+        automix_set_transition_config(engine, &cConfig)
+    }
+    
+    // MARK: - State Queries
     
     /// The current playback state.
     public var state: AutoMixPlaybackState {
-        // let s = automix_get_state(enginePtr)
-        // return AutoMixPlaybackState(rawValue: Int(s)) ?? .stopped
-        return .stopped // placeholder
+        guard let engine = enginePtr else { return .stopped }
+        let cState = automix_get_state(engine)
+        return AutoMixPlaybackState(rawValue: Int(cState.rawValue)) ?? .stopped
     }
     
     /// The current playback position in seconds.
     public var position: Float {
-        // return automix_get_position(enginePtr)
-        return 0.0 // placeholder
+        guard let engine = enginePtr else { return 0.0 }
+        return automix_get_position(engine)
     }
     
     /// The ID of the currently playing track.
     public var currentTrackId: Int64 {
-        // return automix_get_current_track(enginePtr)
-        return -1 // placeholder
-    }
-    
-    /// Sets a callback that is invoked when playback state changes.
-    /// - Parameter callback: Closure receiving (state, current track ID, playback position, next track ID).
-    public func setStatusCallback(_ callback: @escaping (AutoMixPlaybackState, Int64, Float, Int64) -> Void) {
-        // TODO: Retain the Swift closure and bridge to a C function pointer via unsafeBitCast / user_data.
+        guard let engine = enginePtr else { return -1 }
+        return automix_get_current_track(engine)
     }
     
     // MARK: - Audio Management
     
     /// Starts the underlying audio system for automatic output (e.g., CoreAudio).
     public func startAudio() throws {
-        // TODO: Call automix_start_audio
+        guard let engine = enginePtr else { throw AutoMixError.notInitialized }
+        let result = automix_start_audio(engine)
+        if result != AUTOMIX_OK {
+            throw AutoMixError.from(code: result.rawValue)
+        }
     }
     
     /// Stops the underlying audio system's automatic output.
     public func stopAudio() {
-        // TODO: Call automix_stop_audio
+        guard let engine = enginePtr else { return }
+        automix_stop_audio(engine)
     }
     
     /// Integrates with a custom audio render callback.
@@ -191,24 +453,36 @@ public class AutoMixEngine {
     ///   - frames: Number of frames to render.
     /// - Returns: The number of frames actually rendered.
     public func render(buffer: UnsafeMutablePointer<Float>, frames: Int) -> Int {
-        // return Int(automix_render(enginePtr, buffer, Int32(frames)))
-        return 0 // placeholder
+        guard let engine = enginePtr else { return 0 }
+        return Int(automix_render(engine, buffer, Int32(frames)))
     }
     
     /// Call periodically to process non-realtime tasks such as loading. Required when rendering audio manually.
     public func poll() {
-        // automix_poll(enginePtr)
+        guard let engine = enginePtr else { return }
+        automix_poll(engine)
     }
     
     /// The sample rate of the current audio system.
     public var sampleRate: Int {
-        // return Int(automix_get_sample_rate(enginePtr))
-        return 44100 // placeholder
+        guard let engine = enginePtr else { return 44100 }
+        return Int(automix_get_sample_rate(engine))
     }
     
     /// The number of channels in the current audio system (typically 2).
     public var channels: Int {
-        // return Int(automix_get_channels(enginePtr))
-        return 2 // placeholder
+        guard let engine = enginePtr else { return 2 }
+        return Int(automix_get_channels(engine))
     }
 }
+
+// MARK: - Private Trampolines & Contexts
+
+private class ScanContext {
+    let callback: (String, Int, Int) -> Void
+    
+    init(callback: @escaping (String, Int, Int) -> Void) {
+        self.callback = callback
+    }
+}
+

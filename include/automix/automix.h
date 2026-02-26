@@ -158,10 +158,11 @@ AutoMixError automix_get_track_info(
 
 /**
  * Search tracks by path pattern.
+ * Caller must free the returned array with automix_free_track_ids().
  * 
  * @param engine Engine instance
  * @param pattern SQL LIKE pattern (e.g., "%artist%")
- * @param out_ids Output array of track IDs (caller must free)
+ * @param out_ids Output array of track IDs
  * @param out_count Output number of results
  * @return AUTOMIX_OK on success
  */
@@ -209,12 +210,18 @@ PlaylistHandle automix_create_playlist(
 
 /**
  * Get the track IDs in a playlist.
+ * Caller must free the returned array with automix_free_track_ids().
  */
 AutoMixError automix_playlist_get_tracks(
     PlaylistHandle playlist,
     int64_t** out_ids,
     int* out_count
 );
+
+/**
+ * Free track ID array returned by automix_search_tracks or automix_playlist_get_tracks.
+ */
+void automix_free_track_ids(int64_t* ids);
 
 /**
  * Free a playlist handle.
