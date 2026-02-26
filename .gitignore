@@ -134,6 +134,9 @@ doxygen/
 # Plans
 plans/
 
+# CodeQL internal files
+_codeql_detected_source_root
+
 # Preview script output
 transition_preview.wav
 temp_preview.db
