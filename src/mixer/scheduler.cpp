@@ -266,6 +266,13 @@ void Scheduler::poll() {
     // Handle previous request
     if (previous_requested_.exchange(false)) {
         if (current_index_ == 0) {
+            // Cancel any in-progress transition before restarting
+            transitioning_ = false;
+            transition_finished_ = false;
+            crossfader_.stop_automation();
+            next_deck_->pause();
+            next_deck_->unload();
+            crossfader_.set_position(active_deck_ == deck_a_.get() ? -1.0f : 1.0f);
             // Restart current track from beginning
             if (active_deck_->is_loaded()) {
                 active_deck_->seek(0.0f);
