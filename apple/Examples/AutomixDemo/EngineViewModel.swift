@@ -145,7 +145,7 @@ class EngineViewModel: ObservableObject {
     }
     
     func updateStatus(_ status: AutoMixStatus) {
-        // 过渡中音乐仍在播放，UI 上应显示「暂停」状态
+        // 过渡中音乐仍在播放，UI 上应显示「暂停按钮」（即播放状态）
         self.isPlaying = (status.state == .playing || status.state == .transitioning)
         self.isTransitioning = (status.state == .transitioning)
         
@@ -214,6 +214,9 @@ class EngineViewModel: ObservableObject {
                 let elapsed = Date().timeIntervalSince(startTime)
                 let delta = elapsed / Self.transitionAnimationDuration
                 self.transitionProgress = min(1.0, startProgress + delta)
+                if self.transitionProgress >= 1.0 {
+                    self.stopTransitionProgressAnimation()
+                }
             }
     }
     

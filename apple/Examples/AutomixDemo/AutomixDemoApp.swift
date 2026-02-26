@@ -6,9 +6,9 @@ struct AutomixDemoApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(minWidth: 580, minHeight: 500)
+                .frame(minWidth: kMinWindowWidth, minHeight: kMinWindowHeight)
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 580, height: 500)
+        .defaultSize(width: kMinWindowWidth, height: kMinWindowHeight)
     }
 }
