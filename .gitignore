@@ -12,6 +12,10 @@ automix.db-journal
 automix.db-shm
 automix.db-wal
 
+# const files
+keys.json
+.const
+
 # Audio files
 audio-files/
 *.wav

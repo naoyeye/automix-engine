@@ -88,7 +88,7 @@ target_include_directories(automix
 )
 
 target_link_libraries(automix
-    PRIVATE
+    PUBLIC
         ${AVFORMAT_LIBRARIES}
         ${AVCODEC_LIBRARIES}
         ${AVUTIL_LIBRARIES}
@@ -97,7 +97,7 @@ target_link_libraries(automix
 )
 
 target_link_directories(automix
-    PRIVATE
+    PUBLIC
         ${AVFORMAT_LIBRARY_DIRS}
         ${AVCODEC_LIBRARY_DIRS}
         ${AVUTIL_LIBRARY_DIRS}
@@ -108,8 +108,8 @@ target_link_directories(automix
 if(ESSENTIA_FOUND)
     target_compile_definitions(automix PRIVATE AUTOMIX_HAS_ESSENTIA)
     target_include_directories(automix PRIVATE ${ESSENTIA_INCLUDE_DIRS})
-    target_link_libraries(automix PRIVATE ${ESSENTIA_LIBRARIES})
-    target_link_directories(automix PRIVATE ${ESSENTIA_LIBRARY_DIRS})
+    target_link_libraries(automix PUBLIC ${ESSENTIA_LIBRARIES})
+    target_link_directories(automix PUBLIC ${ESSENTIA_LIBRARY_DIRS})
     message(STATUS "Essentia found - full analysis enabled")
 else()
     message(STATUS "Essentia not found - using simplified analysis")
@@ -119,8 +119,8 @@ endif()
 if(RUBBERBAND_FOUND)
     target_compile_definitions(automix PRIVATE AUTOMIX_HAS_RUBBERBAND)
     target_include_directories(automix PRIVATE ${RUBBERBAND_INCLUDE_DIRS})
-    target_link_libraries(automix PRIVATE ${RUBBERBAND_LIBRARIES})
-    target_link_directories(automix PRIVATE ${RUBBERBAND_LIBRARY_DIRS})
+    target_link_libraries(automix PUBLIC ${RUBBERBAND_LIBRARIES})
+    target_link_directories(automix PUBLIC ${RUBBERBAND_LIBRARY_DIRS})
     message(STATUS "Rubber Band found - time-stretch enabled")
 else()
     message(STATUS "Rubber Band not found - time-stretch disabled")
@@ -133,7 +133,7 @@ if(APPLE)
     find_library(COREFOUNDATION_FRAMEWORK CoreFoundation)
     
     target_link_libraries(automix
-        PRIVATE
+        PUBLIC
             ${COREAUDIO_FRAMEWORK}
             ${AUDIOTOOLBOX_FRAMEWORK}
             ${COREFOUNDATION_FRAMEWORK}

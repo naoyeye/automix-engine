@@ -14,18 +14,109 @@ class EngineViewModel: ObservableObject {
     @Published var totalTracksToScan: Int = 0
     @Published var isScanning: Bool = false
     
+    /// 当前播放曲目信息（用于 UI 显示）
+    @Published var currentTrackInfo: TrackInfo?
+    /// 当前曲目从音频文件提取的元数据（艺术家、专辑、封面等）
+    @Published var currentTrackMetadata: TrackMetadata?
+    /// 当前播放列表中的曲目 ID 列表（用于计算「第几首 / 共几首」）
+    @Published var playlistTrackIds: [Int64] = []
+    
+    /// 当前是第几首（1-based）
+    var currentTrackIndex: Int {
+        guard currentTrackId != 0, let idx = playlistTrackIds.firstIndex(of: currentTrackId) else { return 0 }
+        return idx + 1
+    }
+    
+    /// 播放列表总曲数
+    var totalPlaylistCount: Int { playlistTrackIds.count }
+    
     private var engine: AutoMixEngine?
     private var cancellables = Set<AnyCancellable>()
+    private nonisolated(unsafe) var pollTimer: Timer?
     
     init() {
         setupEngine()
     }
     
+    deinit {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+    
+    /// 返回持久化数据库路径，并尝试从临时目录迁移已有数据库
+    private static func persistentDatabasePath() -> String {
+        let fileManager = FileManager.default
+        guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return fileManager.temporaryDirectory.appendingPathComponent("automix.db").path
+        }
+        let automixDir = appSupport.appendingPathComponent("AutomixDemo", isDirectory: true)
+        try? fileManager.createDirectory(at: automixDir, withIntermediateDirectories: true)
+        let destPath = automixDir.appendingPathComponent("automix.db").path
+        
+        // 1. 优先从项目根目录（当前工作目录）迁移，便于与 automix-scan/playlist 共用
+        migrateFromProjectRootIfNeeded(fileManager: fileManager, destination: destPath, destDir: automixDir)
+        // 2. 尝试从 /var/folders 下的临时目录迁移已有数据库
+        migrateFromTempIfNeeded(fileManager: fileManager, destination: destPath)
+        
+        return destPath
+    }
+    
+    /// 从项目根目录（当前工作目录）迁移 automix.db 及 SQLite 相关文件
+    private static func migrateFromProjectRootIfNeeded(fileManager: FileManager, destination: String, destDir: URL) {
+        let projectRoot = URL(fileURLWithPath: fileManager.currentDirectoryPath)
+        let srcDb = projectRoot.appendingPathComponent("automix.db")
+        guard migrateFile(from: srcDb.path, to: destination, fileManager: fileManager) else { return }
+        // 迁移 SQLite 辅助文件（-journal, -shm, -wal）
+        let auxSuffixes = ["-journal", "-shm", "-wal"]
+        for suffix in auxSuffixes {
+            let srcAux = projectRoot.appendingPathComponent("automix.db\(suffix)")
+            let dstAux = destDir.appendingPathComponent("automix.db\(suffix)")
+            if fileManager.fileExists(atPath: srcAux.path) {
+                try? fileManager.removeItem(atPath: dstAux.path)
+                try? fileManager.copyItem(atPath: srcAux.path, toPath: dstAux.path)
+            }
+        }
+    }
+    
+    /// 在临时目录中查找 automix.db，若存在且非空则复制到目标路径
+    private static func migrateFromTempIfNeeded(fileManager: FileManager, destination: String) {
+        // 1. 检查标准临时目录
+        let tempDb = fileManager.temporaryDirectory.appendingPathComponent("automix.db")
+        if migrateFile(from: tempDb.path, to: destination, fileManager: fileManager) {
+            return
+        }
+        // 2. 递归搜索 /var/folders 下的 automix.db
+        let varFolders = URL(fileURLWithPath: "/var/folders")
+        guard let enumerator = fileManager.enumerator(at: varFolders, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { return }
+        while let url = enumerator.nextObject() as? URL {
+            guard url.lastPathComponent == "automix.db" else { continue }
+            if migrateFile(from: url.path, to: destination, fileManager: fileManager) {
+                return
+            }
+        }
+    }
+    
+    /// 若源文件存在且非空，则复制到目标；若目标已有有效数据则不覆盖。返回是否已迁移。
+    private static func migrateFile(from src: String, to dst: String, fileManager: FileManager) -> Bool {
+        guard fileManager.fileExists(atPath: src) else { return false }
+        guard let attrs = try? fileManager.attributesOfItem(atPath: src),
+              let size = attrs[.size] as? Int64, size > 0 else { return false }
+        if fileManager.fileExists(atPath: dst),
+           let dstAttrs = try? fileManager.attributesOfItem(atPath: dst),
+           let dstSize = dstAttrs[.size] as? Int64, dstSize > 0 {
+            return false
+        }
+        if fileManager.fileExists(atPath: dst) { try? fileManager.removeItem(atPath: dst) }
+        guard (try? fileManager.copyItem(atPath: src, toPath: dst)) != nil else { return false }
+        return fileManager.fileExists(atPath: dst)
+    }
+    
     func setupEngine() {
-        let dbPath = FileManager.default.temporaryDirectory.appendingPathComponent("automix.db").path
+        let dbPath = Self.persistentDatabasePath()
         do {
             engine = try AutoMixEngine(dbPath: dbPath)
             statusMessage = "Engine initialized at \(dbPath)"
+            trackCount = engine?.trackCount() ?? 0
             
             engine?.statusPublisher
                 .receive(on: RunLoop.main)
@@ -36,25 +127,77 @@ class EngineViewModel: ObservableObject {
             
             // Start audio engine
             try engine?.startAudio()
+            
+            // 启动 poll 定时器，驱动曲目切换、预加载等（约 20ms 一次）
+            startPollTimer()
                 
         } catch {
             statusMessage = "Failed to initialize engine: \(error)"
         }
     }
     
+    private func startPollTimer() {
+        stopPollTimer()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self, let engine = self.engine else { return }
+                engine.poll()
+                // status 回调仅在状态变化时触发，播放中需主动读取 position 以更新进度
+                // 过渡中不覆盖 position，保持 next/previous 点击时的乐观更新
+                if self.isPlaying, engine.state != .transitioning {
+                    self.position = engine.position
+                }
+            }
+        }
+        pollTimer?.tolerance = 0.005
+        RunLoop.current.add(pollTimer!, forMode: .common)
+    }
+    
+    private func stopPollTimer() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+    
     func updateStatus(_ status: AutoMixStatus) {
-        // Assuming AutoMixPlaybackState is imported as C enum
-        // We need to check the raw value or enum case if mapped
-        // Since it's C enum, it might be Int32 or similar in Swift unless NS_ENUM is used
-        // But let's assume it works as imported enum for now.
-        // If AUTOMIX_STATE_PLAYING is 1
         self.isPlaying = (status.state == .playing)
         self.currentTrackId = status.currentTrackId
         self.position = status.position
+        
+        // 曲目变化时刷新 TrackInfo
+        if status.currentTrackId != 0 {
+            refreshCurrentTrackInfo(trackId: status.currentTrackId)
+        } else {
+            currentTrackInfo = nil
+            currentTrackMetadata = nil
+            playlistTrackIds = []
+        }
+    }
+    
+    private func refreshCurrentTrackInfo(trackId: Int64) {
+        guard let engine = engine else { return }
+        do {
+            currentTrackInfo = try engine.trackInfo(id: trackId)
+            // 异步加载元数据（艺术家、专辑、封面）
+            if let info = currentTrackInfo {
+                Task {
+                    let metadata = await TrackMetadataLoader.loadMetadata(from: info.path)
+                    await MainActor.run {
+                        if self.currentTrackInfo?.id == trackId {
+                            self.currentTrackMetadata = metadata
+                        }
+                    }
+                }
+            } else {
+                currentTrackMetadata = nil
+            }
+        } catch {
+            currentTrackInfo = nil
+            currentTrackMetadata = nil
+        }
     }
     
     func scanLibrary() {
-        guard let engine = engine else { return }
+        guard engine != nil else { return }
         
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -111,13 +254,12 @@ class EngineViewModel: ObservableObject {
                 // For demo, let's try to generate a playlist if none playing
                 if engine.currentTrackId == 0 {
                     // Generate random playlist
-                     // We need a seed track. Let's pick the first one if available.
-                    // Since we don't have a way to get all tracks easily yet (except search),
-                    // let's search for "%" to get all.
                     let allTracks = try engine.searchTracks(pattern: "%")
                     if let seed = allTracks.first {
                         let playlist = try engine.generatePlaylist(seedTrackId: seed, count: 10)
+                        playlistTrackIds = (try? playlist.getTrackIDs()) ?? []
                         try engine.play(playlist: playlist)
+                        refreshCurrentTrackInfo(trackId: engine.currentTrackId)
                     } else {
                         statusMessage = "No tracks to play. Scan library first."
                     }
@@ -131,10 +273,26 @@ class EngineViewModel: ObservableObject {
     }
     
     func next() {
-        try? engine?.next()
+        guard let engine = engine else { return }
+        // 点击后立即乐观更新 UI，不等过渡结束
+        if currentTrackIndex > 0, currentTrackIndex < playlistTrackIds.count {
+            let nextId = playlistTrackIds[currentTrackIndex]
+            currentTrackId = nextId
+            position = 0
+            refreshCurrentTrackInfo(trackId: nextId)
+        }
+        try? engine.next()
     }
     
     func previous() {
-        try? engine?.previous()
+        guard let engine = engine else { return }
+        // 点击后立即乐观更新 UI
+        if currentTrackIndex > 1, currentTrackIndex - 2 < playlistTrackIds.count {
+            let prevId = playlistTrackIds[currentTrackIndex - 2]
+            currentTrackId = prevId
+            position = 0
+            refreshCurrentTrackInfo(trackId: prevId)
+        }
+        try? engine.previous()
     }
 }

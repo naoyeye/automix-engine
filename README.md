@@ -159,16 +159,62 @@ automix_playlist_free(playlist);
 automix_destroy(engine);
 ```
 
+### Swift Automix Demo (macOS)
+
+基于 SwiftUI 的图形化演示应用，展示 AutoMix 引擎的完整功能。
+
+**前置条件**：需先完成 C++ 库的编译（见上文「编译」），并确保 `cmake-build` 目录下已生成 `libautomix.a`。
+
+```bash
+# 1. 编译 C++ 库
+mkdir -p cmake-build && cd cmake-build
+cmake ..
+cmake --build .
+
+# 2. 返回项目根目录，使用 Swift Package Manager 运行 Demo
+cd ..
+swift run AutomixDemo
+```
+
+**功能说明**：
+
+| 功能 | 说明 |
+|------|------|
+| 扫描曲库 | 点击「Scan Music Directory」选择音乐目录，自动分析 BPM、调性等特征 |
+| 播放/暂停 | 首次播放时自动以曲库第一首为种子生成 10 首播放列表 |
+| 上一首/下一首 | 在播放列表中切换曲目，支持无缝过渡 |
+| 状态显示 | 显示当前曲目 ID、播放进度、曲库总数等 |
+
+**注意**：Demo 将数据库持久化到 `~/Library/Application Support/AutomixDemo/automix.db`。首次启动时，会按以下顺序尝试迁移已有数据库（含 `automix.db`、`automix.db-journal`、`automix.db-shm`、`automix.db-wal`）：1）项目根目录（当前工作目录，便于与 `automix-scan`/`automix-playlist` 共用）；2）`/var/folders` 下的临时目录。
+
+从 Xcode 或 Finder 直接启动时，当前工作目录可能不是项目根，迁移可能不会执行。若需复用已有 `automix.db`，建议先在项目根目录用 `swift run AutomixDemo` 启动一次完成迁移，再以其他方式启动。
+
 ### Swift 集成 (macOS/iOS)
 
-```swift
-// 使用 C API 或创建 Swift wrapper
-let engine = automix_create("library.db")
-defer { automix_destroy(engine) }
+项目提供 Swift 封装 `AutoMixEngine`（`import Automix`），推荐使用：
 
-automix_scan(engine, musicPath, 1)
-// ...
+```swift
+import Automix
+
+// 创建引擎（自动管理 C 引擎生命周期）
+let engine = try AutoMixEngine(dbPath: "library.db")
+
+// 扫描曲库
+try engine.scan(musicDir: "/path/to/music", recursive: true)
+
+// 生成播放列表并播放
+let playlist = try engine.generatePlaylist(seedTrackId: seedId, count: 10)
+try engine.play(playlist: playlist)
+
+// 订阅状态更新（Combine）
+engine.statusPublisher
+    .sink { status in
+        print("Track \(status.currentTrackId), position: \(status.position)s")
+    }
+    .store(in: &cancellables)
 ```
+
+也可直接使用底层 C API（`import CAutomix`），参见 `include/automix/automix.h`。
 
 ## 项目结构
 
