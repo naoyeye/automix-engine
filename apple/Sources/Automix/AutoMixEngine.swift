@@ -8,19 +8,20 @@
 import Foundation
 import CAutomix
 
-/// Swift 包装层的核心引擎类，负责管理底层 C `AutoMixEngine` 实例的生命周期、库扫描、播放列表生成及音频控制。
+/// The core engine class of the Swift wrapper. Manages the lifecycle of the underlying
+/// C `AutoMixEngine` instance, library scanning, playlist generation, and audio control.
 public class AutoMixEngine {
     
-    // MARK: - 内部属性
+    // MARK: - Internal Properties
     
-    /// C 引擎实例指针，生命周期由当前 Swift 类控制
+    /// Pointer to the C engine instance; its lifecycle is controlled by this Swift class.
     internal var enginePtr: OpaquePointer?
     
-    // MARK: - 初始化与析构
+    // MARK: - Initialization and Deinitialization
     
-    /// 初始化 AutoMix 引擎实例，调用底层的 `automix_create`。
-    /// - Parameter dbPath: SQLite 数据库文件的路径，如果不存在将被创建
-    /// - Throws: 如果引擎创建失败，抛出错误
+    /// Initializes an AutoMix engine instance by calling the underlying `automix_create`.
+    /// - Parameter dbPath: Path to the SQLite database file; will be created if it does not exist.
+    /// - Throws: `AutoMixError.notInitialized` if engine creation fails.
     public init(dbPath: String) throws {
         self.enginePtr = automix_create(dbPath)
         guard self.enginePtr != nil else {
@@ -28,188 +29,186 @@ public class AutoMixEngine {
         }
     }
     
-    /// 当引擎实例被释放时，自动调用底层 `automix_destroy` 清理资源
+    /// Calls the underlying `automix_destroy` to release resources when the engine is deallocated.
     deinit {
         if let ptr = enginePtr {
             automix_destroy(ptr)
         }
+        #if DEBUG
         print("AutoMixEngine deinitialized: engine destroyed")
+        #endif
     }
     
-    // MARK: - 库扫描
+    // MARK: - Library Scanning
     
-    /// 扫描指定目录以进行音乐文件分析。这是一个阻塞操作。
-    /// 封装了 `automix_scan` 和 `automix_scan_with_callback`。
+    /// Scans a directory for music files and analyzes them. This is a blocking operation.
+    /// Wraps `automix_scan` and `automix_scan_with_callback`.
     ///
     /// - Parameters:
-    ///   - musicDir: 包含音乐文件的目录路径
-    ///   - recursive: 是否递归扫描子目录
-    ///   - progress: 可选的回调闭包，参数分别为（当前处理文件路径, 已处理文件数, 总文件数）。如果不提供，则调用无回调版本。
-    /// - Returns: 已分析的曲目数量
-    /// - Throws: 如果扫描失败或数据库出错，抛出对应 AutoMixError
+    ///   - musicDir: Path to the directory containing music files.
+    ///   - recursive: Whether to scan subdirectories recursively.
+    ///   - progress: Optional callback closure with parameters (current file path, files processed, total files).
+    ///               If omitted, the no-callback variant is called.
+    /// - Returns: The number of tracks successfully analyzed.
+    /// - Throws: An `AutoMixError` if scanning fails or a database error occurs.
     public func scan(musicDir: String, recursive: Bool, progress: ((String, Int, Int) -> Void)? = nil) throws -> Int {
-        // ... C 回调包装逻辑及 C 函数调用 ...
-        return 0 // 占位返回
+        // TODO: Implement C callback wrapping logic and call automix_scan / automix_scan_with_callback
+        return 0 // placeholder
     }
     
-    // MARK: - 曲目检索
+    // MARK: - Track Retrieval
     
-    /// 获取当前库中曲目的数量。
-    /// - Returns: 库内分析完成的曲目总数
+    /// Returns the number of tracks currently in the library.
+    /// - Returns: The total number of analyzed tracks in the library.
     public func trackCount() -> Int {
         // return Int(automix_get_track_count(enginePtr))
-        return 0 // 占位返回
+        return 0 // placeholder
     }
     
-    /// 获取指定 ID 曲目的详细信息。
-    /// 封装 `automix_get_track_info`，负责将 C struct 转化为 Swift struct 并处理字符串的内存管理。
-    /// - Parameter id: 要查询的曲目 ID
-    /// - Returns: 如果找到则返回 TrackInfo 结构体，否则返回 nil (或抛出异常)
-    /// - Throws: 如果底层查询失败，抛出错误
+    /// Retrieves detailed information for a track by its ID.
+    /// Wraps `automix_get_track_info`, converting the C struct to a Swift struct and managing string memory.
+    /// - Parameter id: The ID of the track to query.
+    /// - Returns: A `TrackInfo` struct if found, or `nil` if the track does not exist.
+    /// - Throws: An `AutoMixError` if the underlying query fails.
     public func trackInfo(id: Int64) throws -> TrackInfo? {
-        // ... automix_get_track_info ...
-        return nil // 占位返回
+        // TODO: Call automix_get_track_info and map result to TrackInfo
+        return nil // placeholder
     }
     
-    /// 根据匹配模式搜索曲目。
-    /// 封装 `automix_search_tracks`。
-    /// - Parameter pattern: SQL LIKE 查询模式（例如 "%artist%"）
-    /// - Returns: 匹配的曲目 ID 数组
-    /// - Throws: 搜索失败时抛出错误
+    /// Searches for tracks matching the given pattern.
+    /// Wraps `automix_search_tracks`.
+    /// - Parameter pattern: A SQL LIKE query pattern (e.g., "%artist%").
+    /// - Returns: An array of matching track IDs.
+    /// - Throws: An `AutoMixError` if the search fails.
     public func searchTracks(pattern: String) throws -> [Int64] {
-        // ... automix_search_tracks ...
-        return [] // 占位返回
+        // TODO: Call automix_search_tracks
+        return [] // placeholder
     }
     
-    // MARK: - 播放列表生成
+    // MARK: - Playlist Generation
     
-    /// 根据种子曲目及规则生成一份播放列表。
+    /// Generates a playlist based on a seed track and optional rules.
     /// - Parameters:
-    ///   - seedTrackId: 起始曲目的 ID
-    ///   - count: 期望的播放列表长度（包含种子曲目）
-    ///   - rules: 生成规则，可选
-    /// - Returns: 封装好的 AutoMixPlaylist 实例
-    /// - Throws: 如果生成失败（如找不到种子曲目等），抛出错误
+    ///   - seedTrackId: The ID of the starting track.
+    ///   - count: The desired playlist length (including the seed track).
+    ///   - rules: Optional generation rules.
+    /// - Returns: A populated `AutoMixPlaylist` instance.
+    /// - Throws: An `AutoMixError` if generation fails (e.g., seed track not found).
     public func generatePlaylist(seedTrackId: Int64, count: Int, rules: PlaylistRules? = nil) throws -> AutoMixPlaylist {
-        // ... 构建 C struct 规则，调用 automix_generate_playlist ...
-        // ... 返回 AutoMixPlaylist(handle: handle) ...
-        return AutoMixPlaylist() // 占位返回，假设 AutoMixPlaylist 有可访问的 init
-    }
-    
-    /// 根据已有的曲目 ID 列表手动创建一个播放列表。
-    /// 引擎将计算指定曲目间的最佳过渡。
-    /// - Parameter trackIds: 曲目 ID 数组
-    /// - Returns: 封装好的 AutoMixPlaylist 实例
-    /// - Throws: 创建失败抛出错误
+        // TODO: Build C struct rules, call automix_generate_playlist, return AutoMixPlaylist(handle:)
+        return AutoMixPlaylist() // placeholder — replace with AutoMixPlaylist(handle:) once C handle integration is complete
+    /// The engine will compute the best transitions between the specified tracks.
+    /// - Parameter trackIds: An array of track IDs.
+    /// - Returns: A populated `AutoMixPlaylist` instance.
+    /// - Throws: An `AutoMixError` if creation fails.
     public func createPlaylist(trackIds: [Int64]) throws -> AutoMixPlaylist {
-        // ... automix_create_playlist ...
-        return AutoMixPlaylist() // 占位返回
+        // TODO: Call automix_create_playlist, return AutoMixPlaylist(handle:)
+        return AutoMixPlaylist() // placeholder — replace with AutoMixPlaylist(handle:) once C handle integration is complete
     }
     
-    // MARK: - 播放控制
+    // MARK: - Playback Control
     
-    /// 启动所提供播放列表的播放。
-    /// - Parameter playlist: 要播放的 AutoMixPlaylist 对象
-    /// - Throws: 启动失败抛出错误
+    /// Starts playback of the provided playlist.
+    /// - Parameter playlist: The `AutoMixPlaylist` to play.
+    /// - Throws: An `AutoMixError` if playback fails to start.
     public func play(playlist: AutoMixPlaylist) throws {
-        // ... automix_play(enginePtr, playlist.handle) ...
+        // TODO: Call automix_play(enginePtr, playlist.handle) once AutoMixPlaylist.handle is implemented
     }
     
-    /// 暂停播放。
+    /// Pauses playback.
     public func pause() throws {
-        // ... automix_pause ...
+        // TODO: Call automix_pause
     }
     
-    /// 恢复播放。
+    /// Resumes playback.
     public func resume() throws {
-        // ... automix_resume ...
+        // TODO: Call automix_resume
     }
     
-    /// 完全停止播放。
+    /// Stops playback completely.
     public func stop() throws {
-        // ... automix_stop ...
+        // TODO: Call automix_stop
     }
     
-    /// 跳到下一首曲目，将立即触发过渡。
+    /// Skips to the next track, triggering an immediate transition.
     public func next() throws {
-        // ... automix_skip ...
+        // TODO: Call automix_skip
     }
     
-    /// 回到上一首曲目。若当前为第一首则重头开始播放当前曲目。
+    /// Returns to the previous track. If on the first track, restarts it from the beginning.
     public func previous() throws {
-        // ... automix_previous ...
+        // TODO: Call automix_previous
     }
     
-    /// 在当前播放曲目中定位到指定进度（秒）。
-    /// - Parameter seconds: 目标秒数
+    /// Seeks to a specific position within the currently playing track.
+    /// - Parameter seconds: The target position in seconds.
     public func seek(seconds: Float) throws {
-        // ... automix_seek ...
+        // TODO: Call automix_seek
     }
     
-    // MARK: - 状态查询与回调
+    // MARK: - State Queries and Callbacks
     
-    /// 当前播放状态。
+    /// The current playback state.
     public var state: AutoMixPlaybackState {
         // let s = automix_get_state(enginePtr)
         // return AutoMixPlaybackState(rawValue: Int(s)) ?? .stopped
-        return .stopped // 占位
+        return .stopped // placeholder
     }
     
-    /// 当前播放进度（秒）。
+    /// The current playback position in seconds.
     public var position: Float {
         // return automix_get_position(enginePtr)
-        return 0.0 // 占位
+        return 0.0 // placeholder
     }
     
-    /// 当前播放曲目的 ID。
+    /// The ID of the currently playing track.
     public var currentTrackId: Int64 {
         // return automix_get_current_track(enginePtr)
-        return -1 // 占位
+        return -1 // placeholder
     }
     
-    /// 设置播放状态变化回调。
-    /// - Parameter callback: 回调闭包（状态，当前曲目ID，播放位置，下一首曲目ID）
+    /// Sets a callback that is invoked when playback state changes.
+    /// - Parameter callback: Closure receiving (state, current track ID, playback position, next track ID).
     public func setStatusCallback(_ callback: @escaping (AutoMixPlaybackState, Int64, Float, Int64) -> Void) {
-        // 需要在引擎内部维护这个 Swift 闭包的引用，并使用 C 函数指针转接。
-        // 例如：将 unsafeBitCast 包装为 user_data。
+        // TODO: Retain the Swift closure and bridge to a C function pointer via unsafeBitCast / user_data.
     }
     
-    // MARK: - 音频管理 (可自定义渲染输出或让引擎托管)
+    // MARK: - Audio Management
     
-    /// 开启底层音频系统自动输出 (例如 CoreAudio)。
+    /// Starts the underlying audio system for automatic output (e.g., CoreAudio).
     public func startAudio() throws {
-        // ... automix_start_audio ...
+        // TODO: Call automix_start_audio
     }
     
-    /// 停止底层音频系统的自动输出。
+    /// Stops the underlying audio system's automatic output.
     public func stopAudio() {
-        // ... automix_stop_audio ...
+        // TODO: Call automix_stop_audio
     }
     
-    /// 用于集成到自定义的音频渲染回调中。
+    /// Integrates with a custom audio render callback.
     /// - Parameters:
-    ///   - buffer: 输出缓冲区的指针
-    ///   - frames: 需要渲染的帧数
-    /// - Returns: 实际渲染的帧数
+    ///   - buffer: Pointer to the output buffer.
+    ///   - frames: Number of frames to render.
+    /// - Returns: The number of frames actually rendered.
     public func render(buffer: UnsafeMutablePointer<Float>, frames: Int) -> Int {
         // return Int(automix_render(enginePtr, buffer, Int32(frames)))
-        return 0 // 占位
+        return 0 // placeholder
     }
     
-    /// 定期调用此方法处理加载等非实时任务，尤其是当手动渲染音频时必选。
+    /// Call periodically to process non-realtime tasks such as loading. Required when rendering audio manually.
     public func poll() {
         // automix_poll(enginePtr)
     }
     
-    /// 当前音频系统的采样率。
+    /// The sample rate of the current audio system.
     public var sampleRate: Int {
         // return Int(automix_get_sample_rate(enginePtr))
-        return 44100 // 占位
+        return 44100 // placeholder
     }
     
-    /// 当前音频系统的声道数（通常为 2）。
+    /// The number of channels in the current audio system (typically 2).
     public var channels: Int {
         // return Int(automix_get_channels(enginePtr))
-        return 2 // 占位
+        return 2 // placeholder
     }
 }

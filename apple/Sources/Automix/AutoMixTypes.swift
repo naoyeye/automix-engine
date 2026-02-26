@@ -7,7 +7,7 @@
 
 import Foundation
 
-/// 错误类型，映射 C API 的 `AutoMixError`
+/// Error types that map to the C API's `AutoMixError` codes.
 public enum AutoMixError: Error {
     case invalidArgument
     case fileNotFound
@@ -19,11 +19,11 @@ public enum AutoMixError: Error {
     case notInitialized
     case unknown(Int)
     
-    // 假设内部有一个从 C Int 映射到此枚举的方法
+    // TODO: Add a static factory method that maps a C Int32 code to this enum:
     // static func from(code: Int32) -> AutoMixError
 }
 
-/// 播放状态，映射 C API 的 `AutoMixPlaybackState`
+/// Playback states that map to the C API's `AutoMixPlaybackState`.
 public enum AutoMixPlaybackState: Int {
     case stopped = 0
     case playing = 1
@@ -31,16 +31,16 @@ public enum AutoMixPlaybackState: Int {
     case transitioning = 3
 }
 
-/// 曲目信息，映射 C API 的 `AutoMixTrackInfo`
+/// Track metadata that maps to the C API's `AutoMixTrackInfo`.
 public struct TrackInfo {
     public let id: Int64
     public let path: String
     public let bpm: Float
-    /// Camelot 音调表示法, 例如 "8A"
+    /// Camelot notation key, e.g. "8A".
     public let key: String
-    /// 持续时间（秒）
+    /// Duration in seconds.
     public let duration: Float
-    /// 分析时的 Unix 时间戳
+    /// Unix timestamp of when the track was analyzed.
     public let analyzedAt: Int64
     
     public init(id: Int64, path: String, bpm: Float, key: String, duration: Float, analyzedAt: Int64) {
@@ -53,35 +53,35 @@ public struct TrackInfo {
     }
 }
 
-/// 播放列表生成规则，映射 C API 的 `AutoMixPlaylistRules`
+/// Playlist generation rules that map to the C API's `AutoMixPlaylistRules`.
 public struct PlaylistRules {
-    /// 最大 BPM 差异 (0.0 = 不限制)
+    /// Maximum BPM difference allowed (0.0 = no limit).
     public var bpmTolerance: Float = 0.0
-    /// 是否允许改变音调
+    /// Whether key changes are permitted.
     public var allowKeyChange: Bool = true
-    /// 最大的 Camelot 轮盘距离 (0 = 不限制)
+    /// Maximum Camelot wheel distance between tracks (0 = no limit).
     public var maxKeyDistance: Int = 0
-    /// 最小能量相似度 (0.0-1.0)
+    /// Minimum required energy similarity in the range 0.0–1.0.
     public var minEnergyMatch: Float = 0.0
-    /// 风格过滤器，nil 表示任何风格
+    /// Style filter; `nil` means any style is accepted.
     public var styleFilter: [String]? = nil
-    /// 是否允许混合不同风格
+    /// Whether tracks from different styles may be mixed.
     public var allowCrossStyle: Bool = true
-    /// 随机种子，用于生成可复现的播放列表 (0 = 非确定性)
+    /// Random seed for reproducible playlists (0 = non-deterministic).
     public var randomSeed: UInt32 = 0
     
     public init() {}
 }
 
-/// 过渡配置，映射 C API 的 `AutoMixTransitionConfig`
+/// Transition configuration that maps to the C API's `AutoMixTransitionConfig`.
 public struct TransitionConfig {
-    /// 交叉淡入淡出的节拍数 (默认: 16)
+    /// Number of beats for the crossfade (default: 16).
     public var crossfadeBeats: Float = 16.0
-    /// 是否使用基于 EQ 的过渡
+    /// Whether to use an EQ-based transition.
     public var useEqSwap: Bool = false
-    /// 最大时间拉伸比例 (例如: 0.06 表示 ±6%)
+    /// Maximum time-stretch ratio (e.g. 0.06 means ±6%).
     public var stretchLimit: Float = 0.06
-    /// 过渡后平滑恢复拉伸至 1.0 的时间（秒）
+    /// Time in seconds to smoothly recover stretch back to 1.0 after a transition.
     public var stretchRecoverySeconds: Float = 5.0
     
     public init() {}
