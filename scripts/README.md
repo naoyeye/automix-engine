@@ -68,7 +68,7 @@ python scripts/dedupe_tracks.py -d ./automix.db -r /Users/me/Project/automix-eng
 
 | 参数 | 简写 | 说明 |
 |------|------|------|
-| `--database` | `-d` | 数据库文件路径 |
+| `--db` | `-d` | 数据库文件路径 |
 | `--project-root` | `-r` | 解析相对路径时使用的项目根目录（默认：当前工作目录） |
 | `--dry-run` | `-n` | 仅预览，不执行删除 |
 
