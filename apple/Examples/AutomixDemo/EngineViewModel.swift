@@ -459,7 +459,6 @@ class EngineViewModel: ObservableObject {
         guard let engine = engine, !isTransitioning else { return }
         do {
             try engine.seek(seconds: seconds)
-            position = seconds
         } catch {
             statusMessage = "Seek failed: \(error)"
         }

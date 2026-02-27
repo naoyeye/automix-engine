@@ -101,7 +101,7 @@ public:
     
     /**
      * Seek within current track.
-     * @return false if a transition is in progress.
+     * @return false if a transition is in progress or no track is loaded.
      */
     bool seek(float position);
     

@@ -132,7 +132,7 @@ bool Scheduler::previous() {
         return false;
     }
     if (playlist_.empty() || state_ == PlaybackState::Stopped) {
-        return false;
+        return true;
     }
     previous_requested_ = true;
     return true;
@@ -142,9 +142,10 @@ bool Scheduler::seek(float position) {
     if (transitioning_) {
         return false;
     }
-    if (active_deck_->is_loaded()) {
-        active_deck_->seek(position);
+    if (!active_deck_ || !active_deck_->is_loaded()) {
+        return false;
     }
+    active_deck_->seek(position);
     return true;
 }
 
