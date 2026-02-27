@@ -70,6 +70,31 @@ private extension View {
     }
 }
 
+/// 角落箭头按钮样式：hover/点击时显示背景色
+private struct CornerArrowButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(backgroundOpacity(isHovered: isHovered, isPressed: configuration.isPressed)))
+            )
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .onHover { isHovered = $0 }
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+    
+    private func backgroundOpacity(isHovered: Bool, isPressed: Bool) -> Double {
+        if isPressed { return 0.25 }
+        if isHovered { return 0.15 }
+        return 0
+    }
+}
+
 /// 交互按钮样式：hover 时降低透明度，按下时进一步降低并略微缩小
 private struct InteractiveButtonStyle: ButtonStyle {
     @State private var isHovered = false
@@ -183,41 +208,82 @@ struct ContentView: View {
                 .background(.ultraThinMaterial)
                 .ignoresSafeArea(.all)
             
-            VStack(spacing: 0) {
-                // Track Info（上方，占据剩余空间）
-                trackInfoSection
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-                
-                // Progress Bar + Time Labels
-                progressSection
-                
-                // Playback Controls（固定在底部）
-                playbackControls
-                    .padding(.top, 4)
-                    .padding(.bottom, 20)
+            // 左右滑动容器：播放界面 + 设置面板并排，overflow hidden
+            GeometryReader { geo in
+                let w = geo.size.width
+                HStack(spacing: 0) {
+                    // 左侧：播放界面
+                    frontMainView
+                        .frame(width: w, height: geo.size.height)
+                    // 右侧：设置面板（紧挨着播放界面）
+                    backSettingsView
+                        .frame(width: w, height: geo.size.height)
+                }
+                .offset(x: showLibraryMenu ? -w : 0)
             }
-            .frame(minWidth: kMinWindowWidth, minHeight: kMinWindowHeight)
+            .clipped()
             
+            // 箭头按钮放在最外层 overlay，不受 clipped 影响，可与标题栏 traffic light 垂直对齐
+            // macOS hiddenTitleBar 下 content 有 top inset，需用负 offset 将按钮上移至 traffic light 高度
+            .overlay(alignment: .topTrailing) {
+                Group {
+                    if showLibraryMenu {
+                        Button(action: { showLibraryMenu = false }) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .buttonStyle(CornerArrowButtonStyle())
+                        .pointingHandCursor()
+                    } else {
+                        Button(action: { showLibraryMenu = true }) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .buttonStyle(CornerArrowButtonStyle())
+                        .pointingHandCursor()
+                    }
+                }
+                .padding(.trailing, 10)
+                .padding(.top, 5)
+                .offset(y: -22)
+            }
         }
         .frame(minWidth: kMinWindowWidth, minHeight: kMinWindowHeight)
-        .overlay(alignment: .topTrailing) {
-            Button(action: { showLibraryMenu.toggle() }) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 16, weight: .medium))
-            }
-            .buttonStyle(InteractiveButtonStyle())
-            .pointingHandCursor()
-            .popover(isPresented: $showLibraryMenu, arrowEdge: .top) {
-                libraryAndPlaylistPopover
-                    .frame(width: 280)
-                    .padding()
-            }
-            .padding(.trailing, 25)
-            .padding(.top, -7)
-        }
         .modifier(WindowTransparencyModifier())
+        .animation(.spring(response: 0.5, dampingFraction: 0.85), value: showLibraryMenu)
+    }
+    
+    /// 左侧：播放界面
+    private var frontMainView: some View {
+        VStack(spacing: 0) {
+            trackInfoSection
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+            progressSection
+            playbackControls
+                .padding(.top, 4)
+                .padding(.bottom, 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    /// 右侧：设置面板（可滚动，保持主窗口尺寸不变）
+    private var backSettingsView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 顶部留白，避免内容与最外层按钮重叠
+            Color.clear.frame(height: 44)
+            Divider()
+                .background(Color.white.opacity(0.1))
+            
+            // 可滚动的核心内容区
+            ScrollView(.vertical, showsIndicators: true) {
+                libraryAndPlaylistPopover
+                    .padding(25)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     /// 进度条区域（全宽进度条 + 左右时间标签）
@@ -315,9 +381,10 @@ struct ContentView: View {
                 Button("Scan Music Directory") {
                     viewModel.scanLibrary()
                 }
-                .disabled(viewModel.isScanning)
+                .disabled(viewModel.isScanning || viewModel.currentTrackId != 0)
                 .buttonStyle(.borderedProminent)
                 .pointingHandCursor()
+                .help(viewModel.currentTrackId != 0 ? "Stop playback first to avoid file access conflicts" : "Scan a directory for music files")
             }
             
             Divider()
