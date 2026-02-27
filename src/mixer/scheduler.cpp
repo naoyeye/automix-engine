@@ -128,9 +128,6 @@ bool Scheduler::skip() {
 }
 
 bool Scheduler::previous() {
-    if (transitioning_) {
-        return false;
-    }
     if (playlist_.empty() || state_ == PlaybackState::Stopped) {
         return true;
     }
@@ -291,6 +288,8 @@ void Scheduler::poll() {
             if (active_deck_->is_loaded()) {
                 active_deck_->seek(0.0f);
             }
+            state_ = PlaybackState::Playing;
+            notify_status();
         } else {
             // Go to previous track
             transitioning_ = false;

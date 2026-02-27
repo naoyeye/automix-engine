@@ -130,7 +130,8 @@ public:
     
     /**
      * Go to previous track (or restart current if at first track).
-     * @return false if a transition is in progress.
+     * If a transition is in progress, it will be cancelled.
+     * @return true always when playback is active.
      */
     bool previous();
     

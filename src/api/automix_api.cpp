@@ -374,13 +374,18 @@ AutoMixError automix_skip(AutoMixEngine* engine) {
 
 AutoMixError automix_previous(AutoMixEngine* engine) {
     if (!engine || !engine->engine) return AUTOMIX_ERROR_INVALID_ARGUMENT;
-    if (!engine->engine->previous()) return AUTOMIX_ERROR_TRANSITIONING;
+    engine->engine->previous();
     return AUTOMIX_OK;
 }
 
 AutoMixError automix_seek(AutoMixEngine* engine, float position_seconds) {
     if (!engine || !engine->engine) return AUTOMIX_ERROR_INVALID_ARGUMENT;
-    if (!engine->engine->seek(position_seconds)) return AUTOMIX_ERROR_TRANSITIONING;
+    if (!engine->engine->seek(position_seconds)) {
+        if (engine->engine->playback_state() == PlaybackState::Transitioning) {
+            return AUTOMIX_ERROR_TRANSITIONING;
+        }
+        return AUTOMIX_ERROR_PLAYBACK_ERROR;
+    }
     return AUTOMIX_OK;
 }
 
