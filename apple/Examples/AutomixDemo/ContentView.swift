@@ -151,6 +151,7 @@ private struct PlaybackProgressBar: View {
             let w = geo.size.width
             let filledW = fraction * w
             let midY = geo.size.height / 2
+            let thumbX = max(thumbDiameter / 2, min(filledW, w - thumbDiameter / 2))
             
             ZStack(alignment: .leading) {
                 Capsule()
@@ -170,7 +171,7 @@ private struct PlaybackProgressBar: View {
                         .frame(width: thumbDiameter, height: thumbDiameter)
                         .shadow(color: .black.opacity(isDragging ? 0.4 : 0.2), radius: isDragging ? 3 : 2, y: 1)
                         .scaleEffect(isDragging ? 1.05 : 1.0)
-                        .position(x: filledW, y: midY)
+                        .position(x: thumbX, y: midY)
                         .animation(.easeInOut(duration: 0.12), value: thumbDiameter)
                         .animation(.easeInOut(duration: 0.1), value: isDragging)
                 }
