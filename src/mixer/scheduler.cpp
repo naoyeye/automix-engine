@@ -127,15 +127,11 @@ bool Scheduler::skip() {
     return true;
 }
 
-bool Scheduler::previous() {
-    if (transitioning_) {
-        return false;
-    }
+void Scheduler::previous() {
     if (playlist_.empty() || state_ == PlaybackState::Stopped) {
-        return true;
+        return;
     }
     previous_requested_ = true;
-    return true;
 }
 
 bool Scheduler::seek(float position) {

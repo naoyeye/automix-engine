@@ -264,8 +264,8 @@ bool Engine::skip() {
     return scheduler_->skip();
 }
 
-bool Engine::previous() {
-    return scheduler_->previous();
+void Engine::previous() {
+    scheduler_->previous();
 }
 
 bool Engine::seek(float position) {
@@ -278,6 +278,10 @@ PlaybackState Engine::playback_state() const {
 
 float Engine::playback_position() const {
     return scheduler_->position();
+}
+
+bool Engine::is_transitioning() const {
+    return scheduler_->is_transitioning();
 }
 
 int64_t Engine::current_track_id() const {

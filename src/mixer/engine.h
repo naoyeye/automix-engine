@@ -130,9 +130,9 @@ public:
     
     /**
      * Go to previous track (or restart current if at first track).
-     * @return false if a transition is in progress.
+     * If a transition is in progress it is cancelled before going back.
      */
-    bool previous();
+    void previous();
     
     /**
      * Seek within current track.
@@ -149,6 +149,11 @@ public:
      * Get current playback position.
      */
     float playback_position() const;
+    
+    /**
+     * Whether a crossfade transition is currently in progress.
+     */
+    bool is_transitioning() const;
     
     /**
      * Get currently playing track ID.
