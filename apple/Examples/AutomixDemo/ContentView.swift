@@ -5,6 +5,9 @@ import AppKit
 let kMinWindowWidth: CGFloat = 300
 let kMinWindowHeight: CGFloat = 500
 
+/// 磨砂背景材质（由透到厚）：.ultraThinMaterial / .thinMaterial / .regularMaterial / .thickMaterial / .ultraThickMaterial
+private let kBackgroundMaterial: Material = .thinMaterial
+
 /// 配置窗口为透明，以便磨砂背景能透出桌面
 private struct WindowTransparencyModifier: ViewModifier {
     func body(content: Content) -> some View {
@@ -12,10 +15,14 @@ private struct WindowTransparencyModifier: ViewModifier {
     }
 }
 
+/// 主窗口整体透明度，0~1，越小越透明
+private let kWindowAlphaValue: CGFloat = 0.98
+
 private class WindowConfiguratorView: NSView {
     private weak var configuredWindow: NSWindow?
     private var originalIsOpaque: Bool?
     private var originalBackgroundColor: NSColor?
+    private var originalAlphaValue: CGFloat?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -24,16 +31,20 @@ private class WindowConfiguratorView: NSView {
         if let previousWindow = configuredWindow, previousWindow !== window {
             if let originalIsOpaque { previousWindow.isOpaque = originalIsOpaque }
             if let originalBackgroundColor { previousWindow.backgroundColor = originalBackgroundColor }
+            if let originalAlphaValue { previousWindow.alphaValue = originalAlphaValue }
             configuredWindow = nil
             originalIsOpaque = nil
             originalBackgroundColor = nil
+            originalAlphaValue = nil
         }
 
         guard let window = window, configuredWindow == nil else { return }
         originalIsOpaque = window.isOpaque
         originalBackgroundColor = window.backgroundColor
+        originalAlphaValue = window.alphaValue
         window.isOpaque = false
         window.backgroundColor = .clear
+        window.alphaValue = kWindowAlphaValue
         configuredWindow = window
     }
 
@@ -41,6 +52,7 @@ private class WindowConfiguratorView: NSView {
         if let window = configuredWindow {
             if let originalIsOpaque { window.isOpaque = originalIsOpaque }
             if let originalBackgroundColor { window.backgroundColor = originalBackgroundColor }
+            if let originalAlphaValue { window.alphaValue = originalAlphaValue }
         }
     }
 }
@@ -205,7 +217,7 @@ struct ContentView: View {
             // 磨砂背景：填满整个窗口，避免底部空余
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.ultraThinMaterial)
+                .background(kBackgroundMaterial)
                 .ignoresSafeArea(.all)
             
             // 左右滑动容器：播放界面 + 设置面板并排，overflow hidden
@@ -405,13 +417,21 @@ struct ContentView: View {
                     }
                 }
                 Button("Create & Play") {
-                    if let seed = Int64(createSeedText) {
+                    if let seed = Int64(createSeedText), seed > 0 {
                         viewModel.createAndPlayPlaylist(seedTrackId: seed, count: createCount)
                         showLibraryMenu = false
+                    } else {
+                        viewModel.statusMessage = "Invalid seed track ID. Enter a positive number."
                     }
                 }
-                .disabled(viewModel.trackCount == 0 || viewModel.currentTrackId != 0)
+                .disabled(viewModel.trackCount == 0 || viewModel.isTransitioning)
                 .pointingHandCursor()
+                if !viewModel.statusMessage.isEmpty && viewModel.statusMessage != "Ready" {
+                    Text(viewModel.statusMessage)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
             }
         }
     }

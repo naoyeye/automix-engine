@@ -69,7 +69,7 @@ int Engine::scan(const std::string& music_dir, bool recursive, ScanCallback call
     
     for (int i = 0; i < total; ++i) {
         const auto& file = files[i];
-        std::string path_str = file.string();
+        std::string path_str = utils::path_to_absolute(file);
         int64_t file_mtime = utils::file_modified_time(file);
         
         if (!store_->needs_analysis(path_str, file_mtime)) {
@@ -108,7 +108,7 @@ int Engine::scan(const std::string& music_dir, bool recursive, ScanCallback call
             if (idx >= static_cast<int>(jobs.size())) break;
             
             const auto& job = jobs[idx];
-            std::string path_str = job.path.string();
+            std::string path_str = utils::path_to_absolute(job.path);
             
             // Decode (analysis mode: mono 22050Hz)
             auto decode_result = local_decoder.decode_for_analysis(path_str);

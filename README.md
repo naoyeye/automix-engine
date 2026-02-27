@@ -137,7 +137,7 @@ export AUTOMIX_DB=/path/to/my/automix.db
 ./automix-play --seed {start_track_id} --stretch-recover 6
 
 # 快速检验过渡效果
-./preview_transition.sh song1.mp3 song2.mp3 output.wav
+./scripts/preview_transition.sh song1.mp3 song2.mp3 output.wav
 ```
 
 ### 便捷检验工具
@@ -158,14 +158,9 @@ cd cmake-build && make automix-render-transition
 ./automix-render-transition ~/Library/Application\ Support/Automix/automix.db 1 2 output.wav
 ```
 
-**2. 一键预览脚本 (`preview_transition.sh`)**
+**2. 一键预览脚本 (`scripts/preview_transition.sh`)**
 
-无需手动管理数据库，直接输入两个音频文件即可生成过渡预览。
-
-```bash
-# 用法: ./preview_transition.sh <file1> <file2> [output.wav]
-./preview_transition.sh song1.mp3 song2.mp3 preview.wav
-```
+无需手动管理数据库，直接输入两个音频文件即可生成过渡预览。用法详见 `scripts/README.md`。
 
 生成的 WAV 文件可以直接拖入 Audacity 等音频编辑软件中，直观地观察 Crossfade 曲线、节奏对齐情况和能量变化。
 
