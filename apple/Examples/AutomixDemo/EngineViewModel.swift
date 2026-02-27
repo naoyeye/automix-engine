@@ -447,7 +447,7 @@ class EngineViewModel: ObservableObject {
     }
     
     func next() {
-        guard let engine = engine else { return }
+        guard let engine = engine, !isTransitioning else { return }
         do {
             try engine.next()
         } catch {
@@ -455,14 +455,31 @@ class EngineViewModel: ObservableObject {
         }
     }
     
+    func seek(to seconds: Float) {
+        guard let engine = engine, !isTransitioning else { return }
+        do {
+            try engine.seek(seconds: seconds)
+        } catch {
+            statusMessage = "Seek failed: \(error)"
+        }
+    }
+    
     /// 在 Demo 中创建播放列表并播放（与 CLI 的 --seed/--count 一致，会保存到共享文件）
     func createAndPlayPlaylist(seedTrackId: Int64, count: Int) {
         guard let engine = engine else { return }
-        guard engine.currentTrackId == 0 else {
-            statusMessage = "Stop first to create new playlist."
-            return
-        }
         do {
+            // 若正在播放或暂停，先 stop，以便能创建新列表（Demo 无单独 Stop 按钮）
+            if engine.currentTrackId != 0 {
+                try engine.stop()
+                currentTrackId = 0
+                currentTrackInfo = nil
+                currentTrackMetadata = nil
+                nextTrackInfo = nil
+                nextMetadataTask?.cancel()
+                nextMetadataTask = nil
+                playlistTrackIds = []
+                position = 0
+            }
             let playlist = try engine.generatePlaylist(seedTrackId: seedTrackId, count: count)
             let ids = (try? playlist.getTrackIDs()) ?? []
             requestedPlaylistCount = count
@@ -476,7 +493,7 @@ class EngineViewModel: ObservableObject {
     }
 
     func previous() {
-        guard let engine = engine else { return }
+        guard let engine = engine, !isTransitioning else { return }
         do {
             try engine.previous()
         } catch {

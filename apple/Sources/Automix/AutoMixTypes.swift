@@ -17,6 +17,7 @@ public enum AutoMixError: Error, Equatable {
     case playbackError
     case outOfMemory
     case notInitialized
+    case transitioning
     case unknown(Int)
     
     /// Maps a C API `AutoMixError` code (Int32) to the corresponding Swift enum case.
@@ -40,6 +41,8 @@ public enum AutoMixError: Error, Equatable {
             return .outOfMemory
         case -8:
             return .notInitialized
+        case -9:
+            return .transitioning
         default:
             return .unknown(Int(code))
         }

@@ -490,7 +490,7 @@ void test_scheduler_skip() {
     assert(sched.current_track_id() == 1);
     
     // Skip triggers transition
-    sched.skip();
+    assert(sched.skip());
     
     // Need to poll to process the skip
     sched.poll();
@@ -542,13 +542,13 @@ void test_scheduler_previous() {
         sched.render(buf.data(), 512, kSampleRate);
     }
     assert(sched.position() > 0.0f);
-    sched.previous();
+    assert(sched.previous());
     sched.poll();
     assert(sched.current_track_id() == 1);
     assert(sched.position() < 0.1f);  // restarted from beginning (or near it)
     
     // (2) Skip to next, then previous() back to track 1 (exercises previous when not at first track)
-    sched.skip();
+    assert(sched.skip());
     sched.poll();
     bool reached_track2 = false;
     for (int i = 0; i < 1000; i++) {
@@ -561,7 +561,7 @@ void test_scheduler_previous() {
     }
     assert(reached_track2 && "Scheduler did not reach track 2 within expected iterations");
 
-    sched.previous();
+    assert(sched.previous());
     sched.poll();
     assert(sched.current_track_id() == 1);
     assert(sched.state() == PlaybackState::Playing);
@@ -606,8 +606,8 @@ void test_scheduler_previous() {
             sched2.poll();
             rendered += chunk;
         }
-        // The transition should have started; call previous() immediately to cancel it
-        sched2.previous();
+        // The transition should have started; call previous() to cancel it
+        assert(sched2.previous());
         sched2.poll();
 
         // The deck must NOT have swapped to track 2; track 1 must still be active

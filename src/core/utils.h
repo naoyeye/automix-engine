@@ -227,6 +227,19 @@ inline int64_t current_timestamp() {
     ).count();
 }
 
+/**
+ * Normalize path to absolute form for consistent storage.
+ * Prevents duplicate entries when the same directory is scanned with
+ * different path representations (e.g. ./audio-files vs /full/path/audio-files).
+ */
+inline std::string path_to_absolute(const std::filesystem::path& path) {
+    try {
+        return std::filesystem::absolute(path).string();
+    } catch (...) {
+        return path.string();
+    }
+}
+
 inline int64_t file_modified_time(const std::filesystem::path& path) {
     try {
         auto ftime = std::filesystem::last_write_time(path);

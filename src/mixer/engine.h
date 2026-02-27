@@ -124,18 +124,22 @@ public:
     
     /**
      * Skip to next track.
+     * @return false if a transition is already in progress.
      */
-    void skip();
+    bool skip();
     
     /**
      * Go to previous track (or restart current if at first track).
+     * If a transition is in progress, it will be cancelled.
+     * @return true always when playback is active.
      */
-    void previous();
+    bool previous();
     
     /**
      * Seek within current track.
+     * @return false if a transition is in progress or if no track is loaded.
      */
-    void seek(float position);
+    bool seek(float position);
     
     /**
      * Get current playback state.

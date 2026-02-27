@@ -8,7 +8,23 @@ import AppKit
 import Automix
 
 enum MetadataService {
+    private static let inflightTasks = InflightTasks()
+    
     static func loadMetadata(
+        for trackId: Int64,
+        path: String,
+        engine: AutoMixEngine,
+        apiKey: String?
+    ) async -> TrackMetadata {
+        let task = await inflightTasks.taskFor(trackId: trackId) {
+            await loadMetadataImpl(for: trackId, path: path, engine: engine, apiKey: apiKey)
+        }
+        let result = await task.value
+        await inflightTasks.cleanup(trackId: trackId)
+        return result
+    }
+    
+    private static func loadMetadataImpl(
         for trackId: Int64,
         path: String,
         engine: AutoMixEngine,
@@ -226,7 +242,7 @@ enum MetadataService {
         do {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await shieldedData(for: request)
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 print("[AcoustID] response is not valid JSON")
                 return nil
@@ -371,7 +387,7 @@ enum MetadataService {
         request.setValue("AutoMixDemo/1.0.0 ( automix-demo@example.com )", forHTTPHeaderField: "User-Agent")
         
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await shieldedData(for: request)
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let releaseGroups = json["release-groups"] as? [[String: Any]],
                   let first = releaseGroups.first,
@@ -402,7 +418,7 @@ enum MetadataService {
         guard let url = components.url else { return nil }
         
         do {
-            let (data, _) = try await URLSession.shared.data(for: URLRequest(url: url))
+            let (data, _) = try await shieldedData(for: URLRequest(url: url))
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let results = json["results"] as? [[String: Any]],
                   let first = results.first,
@@ -412,7 +428,7 @@ enum MetadataService {
             let hiRes = artworkUrl.replacingOccurrences(of: "100x100", with: "600x600")
             print("[iTunes] found: \(first["collectionName"] ?? "") artwork=\(hiRes)")
             guard let imageUrl = URL(string: hiRes) else { return nil }
-            let (imageData, _) = try await URLSession.shared.data(from: imageUrl)
+            let (imageData, _) = try await shieldedData(from: imageUrl)
             return NSImage(data: imageData)
         } catch {
             print("[iTunes] search failed: \(error)")
@@ -427,7 +443,7 @@ enum MetadataService {
         request.setValue("AutoMixDemo/1.0.0 ( automix-demo@example.com )", forHTTPHeaderField: "User-Agent")
         
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await shieldedData(for: request)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 return nil
             }
@@ -436,6 +452,43 @@ enum MetadataService {
             print("Cover Art fetch failed: \(error)")
             return nil
         }
+    }
+    
+    // MARK: - Cancellation-shielded networking
+    
+    private static func shieldedData(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await withCheckedThrowingContinuation { continuation in
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let data, let response {
+                    continuation.resume(returning: (data, response))
+                } else {
+                    continuation.resume(throwing: URLError(.unknown))
+                }
+            }.resume()
+        }
+    }
+    
+    private static func shieldedData(from url: URL) async throws -> (Data, URLResponse) {
+        try await shieldedData(for: URLRequest(url: url))
+    }
+}
+
+private actor InflightTasks {
+    private var tasks: [Int64: Task<TrackMetadata, Never>] = [:]
+    
+    func taskFor(trackId: Int64, create: @Sendable @escaping () async -> TrackMetadata) -> Task<TrackMetadata, Never> {
+        if let existing = tasks[trackId] {
+            return existing
+        }
+        let task = Task { await create() }
+        tasks[trackId] = task
+        return task
+    }
+    
+    func cleanup(trackId: Int64) {
+        tasks.removeValue(forKey: trackId)
     }
 }
 
