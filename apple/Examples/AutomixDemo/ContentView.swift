@@ -191,14 +191,24 @@ private struct PlaybackProgressBar: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         guard !isDisabled, duration > 0 else { return }
+                        guard w > 0 else {
+                            isDragging = true
+                            dragFraction = 0
+                            return
+                        }
                         isDragging = true
-                        dragFraction = value.location.x / w
+                        dragFraction = clamped(value.location.x / w)
                     }
                     .onEnded { value in
                         guard !isDisabled, duration > 0 else { return }
+                        guard w > 0 else {
+                            isDragging = false
+                            return
+                        }
                         let final_ = clamped(value.location.x / w)
                         onSeek(Float(final_) * duration)
                         isDragging = false
+                        NSCursor.arrow.set()
                     }
             )
         }
