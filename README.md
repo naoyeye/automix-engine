@@ -14,6 +14,7 @@
 ## 依赖
 
 ### 必需
+
 - CMake >= 3.20
 - C++17 编译器
 - FFmpeg (libavformat, libavcodec, libswresample)
@@ -21,6 +22,7 @@
 - Essentia (核心音频分析引擎)
 
 ### 可选
+
 - Rubber Band (time-stretch 功能)
 - Chromaprint / fpcalc (声纹识别，用于补全缺失的音频元数据)
 
@@ -42,10 +44,10 @@ brew install chromaprint
 
 ### Essentia（必需，完整音频分析）
 
-https://github.com/MTG/essentia/
+[https://github.com/MTG/essentia/](https://github.com/MTG/essentia/)
 
 Essentia 不在 Homebrew 官方仓库，需要从源码编译。相关文档
-https://github.com/MTG/essentia/blob/master/doc/sphinxdoc/installing.rst
+[https://github.com/MTG/essentia/blob/master/doc/sphinxdoc/installing.rst](https://github.com/MTG/essentia/blob/master/doc/sphinxdoc/installing.rst)
 
 可能遇到 C++ 标准版本不匹配问题导致执行 python3 waf 时报错
 
@@ -53,20 +55,19 @@ https://github.com/MTG/essentia/blob/master/doc/sphinxdoc/installing.rst
 
 `std::enable_if_t`, `std::integer_sequence` 等 C++14 特性的缺失。
 
-
 解决方案
 
-需要告诉 waf 使用更高的 C++ 标准（至少 C++14，建议 C++17）。
+需要告诉 waf 使用更高的 C++标准（至少 C++14，建议 C++17）。
 请在执行配置时添加 CXXFLAGS 环境变量：
 
-1. 
+
+
 清理旧的构建配置：
 `rm -rf cmake-build`
 
-2. 重新配置 (指定 C++17)
+1. 重新配置 (指定 C++17)
 
 `CXXFLAGS="-std=c++17" python3 waf configure --build-static --with-examples --with-vamp`
-
 
 或使用 Conda：
 
@@ -93,18 +94,22 @@ cmake --build .
 
 CLI 工具与 Demo 共用同一套数据库路径规则，便于扫描与播放数据一致：
 
-| 优先级 | 来源 | 说明 |
-|-------|------|------|
-| 1 | `-d` / `--database` | CLI 命令行参数（仅 CLI） |
-| 2 | `AUTOMIX_DB` 环境变量 | 两者均支持 |
-| 3 | 平台默认路径 | 见下表 |
+
+| 优先级 | 来源                  | 说明               |
+| --- | ------------------- | ---------------- |
+| 1   | `-d` / `--database` | CLI 命令行参数（仅 CLI） |
+| 2   | `AUTOMIX_DB` 环境变量   | 两者均支持            |
+| 3   | 平台默认路径              | 见下表              |
+
 
 **默认路径**：
 
-| 平台 | 默认路径 |
-|------|----------|
-| macOS | `~/Library/Application Support/Automix/automix.db` |
+
+| 平台    | 默认路径                                                                       |
+| ----- | -------------------------------------------------------------------------- |
+| macOS | `~/Library/Application Support/Automix/automix.db`                         |
 | Linux | `~/.local/share/automix/automix.db`（或 `$XDG_DATA_HOME/automix/automix.db`） |
+
 
 **共享播放列表**：CLI 生成播放列表时会保存到 `automix_playlist.txt`（与数据库同目录）。Demo 播放时优先读取该文件，实现 CLI 与 Demo 播放列表一致。Demo 也可在界面中创建播放列表（指定 seed 和 count），同样会保存到共享文件。
 
@@ -198,22 +203,30 @@ automix_destroy(engine);
 ```bash
 # 1. 编译 C++ 库
 mkdir -p cmake-build && cd cmake-build
+
 cmake ..
+## 或者指定架构：
+cmake -DCMAKE_OSX_ARCHITECTURES=x86_64 ..
+
 cmake --build .
 
 # 2. 返回项目根目录，使用 Swift Package Manager 运行 Demo
 cd ..
-swift run AutomixDemo
+swift test --arch x86_64 & swift build --target AutomixDemo && swift run AutomixDemo;
 ```
+
+
 
 **功能说明**：
 
-| 功能 | 说明 |
-|------|------|
-| 扫描曲库 | 点击「Scan Music Directory」选择音乐目录，自动分析 BPM、调性等特征 |
-| 播放/暂停 | 首次播放时自动以曲库第一首为种子生成 10 首播放列表 |
-| 上一首/下一首 | 在播放列表中切换曲目，支持无缝过渡 |
-| 状态显示 | 显示当前曲目名称/艺术家/封面、播放进度及在播放列表中的位置等 |
+
+| 功能      | 说明                                            |
+| ------- | --------------------------------------------- |
+| 扫描曲库    | 点击「Scan Music Directory」选择音乐目录，自动分析 BPM、调性等特征 |
+| 播放/暂停   | 首次播放时自动以曲库第一首为种子生成 10 首播放列表                   |
+| 上一首/下一首 | 在播放列表中切换曲目，支持无缝过渡                             |
+| 状态显示    | 显示当前曲目名称/艺术家/封面、播放进度及在播放列表中的位置等               |
+
 
 **注意**：Demo 与 CLI 共用同一默认数据库路径（见上文「数据库路径」）。未设置 `AUTOMIX_DB` 时，数据保存在 `~/Library/Application Support/Automix/automix.db`。
 
@@ -249,12 +262,15 @@ Demo 播放时会自动为每首曲目获取 title、artist、album 和专辑封
 
 **配置要求**：
 
-| 依赖 | 用途 | 安装方式 |
-|------|------|----------|
-| fpcalc | 音频指纹提取（AcoustID 步骤 3） | `brew install chromaprint` |
-| AcoustID API key | 声纹查询（步骤 3） | 在 [acoustid.org](https://acoustid.org/) 注册后获取 |
+
+| 依赖               | 用途                    | 安装方式                                          |
+| ---------------- | --------------------- | --------------------------------------------- |
+| fpcalc           | 音频指纹提取（AcoustID 步骤 3） | `brew install chromaprint`                    |
+| AcoustID API key | 声纹查询（步骤 3）            | 在 [acoustid.org](https://acoustid.org/) 注册后获取 |
+
 
 API key 配置：创建 `keys.json` 文件，放在以下任一位置：
+
 1. `~/Library/Application Support/AutomixDemo/keys.json`（推荐）
 2. 当前工作目录下
 3. App Bundle 内

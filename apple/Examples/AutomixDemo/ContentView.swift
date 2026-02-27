@@ -219,7 +219,7 @@ private struct PlaybackProgressBar: View {
 
 struct ContentView: View {
     @StateObject private var viewModel = EngineViewModel()
-    @State private var createSeedText = "5"
+    @State private var createSeedText = ""
     @State private var createCount = 10
     @State private var showLibraryMenu = false
     
