@@ -62,10 +62,10 @@ Essentia 不在 Homebrew 官方仓库，需要从源码编译。相关文档
 
 
 
-清理旧的构建配置：
+1. 清理旧的构建配置：
 `rm -rf cmake-build`
 
-1. 重新配置 (指定 C++17)
+2. 重新配置 (指定 C++17)
 
 `CXXFLAGS="-std=c++17" python3 waf configure --build-static --with-examples --with-vamp`
 
@@ -212,7 +212,7 @@ cmake --build .
 
 # 2. 返回项目根目录，使用 Swift Package Manager 运行 Demo
 cd ..
-swift test --arch x86_64 & swift build --target AutomixDemo && swift run AutomixDemo;
+swift test --arch x86_64 && swift build --target AutomixDemo && swift run AutomixDemo
 ```
 
 

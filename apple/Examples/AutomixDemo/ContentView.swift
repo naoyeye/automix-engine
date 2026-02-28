@@ -23,6 +23,8 @@ private class WindowConfiguratorView: NSView {
     private var originalIsOpaque: Bool?
     private var originalBackgroundColor: NSColor?
     private var originalAlphaValue: CGFloat?
+    private var originalHidesOnDeactivate: Bool?
+    private var originalCollectionBehavior: NSWindow.CollectionBehavior?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -32,21 +34,27 @@ private class WindowConfiguratorView: NSView {
             if let originalIsOpaque { previousWindow.isOpaque = originalIsOpaque }
             if let originalBackgroundColor { previousWindow.backgroundColor = originalBackgroundColor }
             if let originalAlphaValue { previousWindow.alphaValue = originalAlphaValue }
+            if let originalHidesOnDeactivate { previousWindow.hidesOnDeactivate = originalHidesOnDeactivate }
+            if let originalCollectionBehavior { previousWindow.collectionBehavior = originalCollectionBehavior }
             configuredWindow = nil
             originalIsOpaque = nil
             originalBackgroundColor = nil
             originalAlphaValue = nil
+            originalHidesOnDeactivate = nil
+            originalCollectionBehavior = nil
         }
 
         guard let window = window, configuredWindow == nil else { return }
         originalIsOpaque = window.isOpaque
         originalBackgroundColor = window.backgroundColor
         originalAlphaValue = window.alphaValue
+        originalHidesOnDeactivate = window.hidesOnDeactivate
+        originalCollectionBehavior = window.collectionBehavior
         window.isOpaque = false
         window.backgroundColor = .clear
         window.alphaValue = kWindowAlphaValue
         window.hidesOnDeactivate = false
-        window.collectionBehavior = [.managed, .fullScreenPrimary, .participatesInCycle]
+        window.collectionBehavior.formUnion([.managed, .fullScreenPrimary, .participatesInCycle])
         configuredWindow = window
     }
 
@@ -55,6 +63,8 @@ private class WindowConfiguratorView: NSView {
             if let originalIsOpaque { window.isOpaque = originalIsOpaque }
             if let originalBackgroundColor { window.backgroundColor = originalBackgroundColor }
             if let originalAlphaValue { window.alphaValue = originalAlphaValue }
+            if let originalHidesOnDeactivate { window.hidesOnDeactivate = originalHidesOnDeactivate }
+            if let originalCollectionBehavior { window.collectionBehavior = originalCollectionBehavior }
         }
     }
 }
