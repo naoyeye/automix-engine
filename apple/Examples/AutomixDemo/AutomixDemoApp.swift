@@ -11,16 +11,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         guard let w = mainContentWindow else { return }
-        w.level = .floating
         w.makeKeyAndOrderFront(nil)
     }
 
-    func applicationDidResignActive(_ notification: Notification) {
-        mainContentWindow?.level = .normal
-    }
-
     private var mainContentWindow: NSWindow? {
-        NSApp.windows.first { $0.isVisible && $0.title == "AutomixDemo" }
+        NSApp.keyWindow
+            ?? NSApp.mainWindow
+            ?? NSApp.windows.first { $0.isVisible }
     }
 }
 
