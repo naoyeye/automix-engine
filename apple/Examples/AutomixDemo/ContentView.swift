@@ -23,6 +23,8 @@ private class WindowConfiguratorView: NSView {
     private var originalIsOpaque: Bool?
     private var originalBackgroundColor: NSColor?
     private var originalAlphaValue: CGFloat?
+    private var originalHidesOnDeactivate: Bool?
+    private var originalCollectionBehavior: NSWindow.CollectionBehavior?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -32,19 +34,27 @@ private class WindowConfiguratorView: NSView {
             if let originalIsOpaque { previousWindow.isOpaque = originalIsOpaque }
             if let originalBackgroundColor { previousWindow.backgroundColor = originalBackgroundColor }
             if let originalAlphaValue { previousWindow.alphaValue = originalAlphaValue }
+            if let originalHidesOnDeactivate { previousWindow.hidesOnDeactivate = originalHidesOnDeactivate }
+            if let originalCollectionBehavior { previousWindow.collectionBehavior = originalCollectionBehavior }
             configuredWindow = nil
             originalIsOpaque = nil
             originalBackgroundColor = nil
             originalAlphaValue = nil
+            originalHidesOnDeactivate = nil
+            originalCollectionBehavior = nil
         }
 
         guard let window = window, configuredWindow == nil else { return }
         originalIsOpaque = window.isOpaque
         originalBackgroundColor = window.backgroundColor
         originalAlphaValue = window.alphaValue
+        originalHidesOnDeactivate = window.hidesOnDeactivate
+        originalCollectionBehavior = window.collectionBehavior
         window.isOpaque = false
         window.backgroundColor = .clear
         window.alphaValue = kWindowAlphaValue
+        window.hidesOnDeactivate = false
+        window.collectionBehavior.formUnion([.managed, .fullScreenPrimary, .participatesInCycle])
         configuredWindow = window
     }
 
@@ -53,6 +63,8 @@ private class WindowConfiguratorView: NSView {
             if let originalIsOpaque { window.isOpaque = originalIsOpaque }
             if let originalBackgroundColor { window.backgroundColor = originalBackgroundColor }
             if let originalAlphaValue { window.alphaValue = originalAlphaValue }
+            if let originalHidesOnDeactivate { window.hidesOnDeactivate = originalHidesOnDeactivate }
+            if let originalCollectionBehavior { window.collectionBehavior = originalCollectionBehavior }
         }
     }
 }
@@ -219,14 +231,15 @@ private struct PlaybackProgressBar: View {
 
 struct ContentView: View {
     @StateObject private var viewModel = EngineViewModel()
-    @State private var createSeedText = "5"
+    @State private var createSeedText = ""
     @State private var createCount = 10
     @State private var showLibraryMenu = false
     
     var body: some View {
         ZStack {
             // 磨砂背景：填满整个窗口，避免底部空余
-            Color.clear
+            // 使用极低透明度的白色而非 Color.clear，确保整个区域可被点击（hit-testable）
+            Color.white.opacity(0.001)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(kBackgroundMaterial)
                 .ignoresSafeArea(.all)
@@ -271,6 +284,7 @@ struct ContentView: View {
                 .offset(y: -22)
             }
         }
+        .contentShape(Rectangle())
         .frame(minWidth: kMinWindowWidth, minHeight: kMinWindowHeight)
         .modifier(WindowTransparencyModifier())
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: showLibraryMenu)
