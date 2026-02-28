@@ -45,6 +45,8 @@ private class WindowConfiguratorView: NSView {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.alphaValue = kWindowAlphaValue
+        window.hidesOnDeactivate = false
+        window.collectionBehavior = [.managed, .fullScreenPrimary, .participatesInCycle]
         configuredWindow = window
     }
 
@@ -226,7 +228,8 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             // 磨砂背景：填满整个窗口，避免底部空余
-            Color.clear
+            // 使用极低透明度的白色而非 Color.clear，确保整个区域可被点击（hit-testable）
+            Color.white.opacity(0.001)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(kBackgroundMaterial)
                 .ignoresSafeArea(.all)
@@ -271,6 +274,7 @@ struct ContentView: View {
                 .offset(y: -22)
             }
         }
+        .contentShape(Rectangle())
         .frame(minWidth: kMinWindowWidth, minHeight: kMinWindowHeight)
         .modifier(WindowTransparencyModifier())
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: showLibraryMenu)
