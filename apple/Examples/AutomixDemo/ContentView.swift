@@ -424,6 +424,9 @@ struct ContentView: View {
                 .help(viewModel.currentTrackId != 0 ? "Stop playback first to avoid file access conflicts" : "Scan a directory for music files")
             }
             
+            Toggle("Mix 过渡效果", isOn: $viewModel.mixEnabled)
+                .help(viewModel.mixEnabled ? "关闭后仅做元数据扫描，曲间硬切" : "开启后分析 BPM/调性，曲间平滑过渡")
+            
             Divider()
             
             // Create Playlist

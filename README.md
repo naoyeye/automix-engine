@@ -10,6 +10,7 @@
 - **过渡点选择**: 自动识别最佳进/出点
 - **实时混音**: 双 Deck 架构，支持 Crossfade 和 EQ 过渡
 - **Time-stretch**: 无变调的 BPM 对齐（需要 Rubber Band）
+- **Mix 开关**: 可关闭混音模式，作为普通播放器使用（仅元数据扫描、曲间硬切、从 0:00 播满整首）
 
 ## 依赖
 
@@ -126,6 +127,11 @@ export AUTOMIX_DB=/path/to/my/automix.db
 # 扫描音乐目录（使用默认数据库路径）
 ./automix-scan /path/to/music
 
+# 仅元数据扫描（不分析 BPM/调性，适用于 Mix 关闭模式）
+./automix-scan -m /path/to/music
+# 或
+./automix-scan --metadata-only /path/to/music
+
 # 指定数据库路径
 ./automix-scan -d ./automix.db /path/to/music
 
@@ -177,8 +183,8 @@ cd cmake-build && make automix-render-transition
 // 创建引擎
 AutoMixEngine* engine = automix_create("library.db");
 
-// 扫描音乐
-automix_scan(engine, "/path/to/music", 1);
+// 扫描音乐（第 4 参数 metadata_only：0=全量分析，1=仅元数据）
+automix_scan(engine, "/path/to/music", 1, 0);
 
 // 生成播放列表
 PlaylistHandle playlist = automix_generate_playlist(engine, seed_id, 10, NULL);
@@ -223,8 +229,9 @@ swift test --arch x86_64 && swift build --target AutomixDemo && swift run Automi
 | 功能      | 说明                                            |
 | ------- | --------------------------------------------- |
 | 扫描曲库    | 点击「Scan Music Directory」选择音乐目录，自动分析 BPM、调性等特征 |
+| Mix 过渡效果 | 设置面板中的开关。关闭后：扫描仅做元数据（path/时长），不分析 BPM/调性；曲间硬切；每首从 0:00 播至结束，时长为实际时长 |
 | 播放/暂停   | 首次播放时自动以曲库第一首为种子生成 10 首播放列表                   |
-| 上一首/下一首 | 在播放列表中切换曲目，支持无缝过渡                             |
+| 上一首/下一首 | 在播放列表中切换曲目，Mix 开启时无缝过渡，关闭时硬切                    |
 | 状态显示    | 显示当前曲目名称/艺术家/封面、播放进度及在播放列表中的位置等               |
 
 
@@ -291,8 +298,8 @@ import Automix
 // 创建引擎（自动管理 C 引擎生命周期）
 let engine = try AutoMixEngine(dbPath: "library.db")
 
-// 扫描曲库
-try engine.scan(musicDir: "/path/to/music", recursive: true)
+// 扫描曲库（metadataOnly: true 时仅做元数据扫描，不分析 BPM/调性）
+try engine.scan(musicDir: "/path/to/music", recursive: true, metadataOnly: false)
 
 // 生成播放列表并播放
 let playlist = try engine.generatePlaylist(seedTrackId: seedId, count: 10)

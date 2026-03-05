@@ -55,9 +55,10 @@ public:
      * @param music_dir Directory to scan
      * @param recursive Scan subdirectories
      * @param callback Optional progress callback
-     * @return Number of tracks analyzed
+     * @param metadata_only When true, only get path/duration/mtime, skip BPM/key/feature analysis
+     * @return Number of tracks processed
      */
-    int scan(const std::string& music_dir, bool recursive = true, ScanCallback callback = nullptr);
+    int scan(const std::string& music_dir, bool recursive = true, ScanCallback callback = nullptr, bool metadata_only = false);
     
     /**
      * Get total track count in library.

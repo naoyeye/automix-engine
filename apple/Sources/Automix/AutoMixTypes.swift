@@ -101,6 +101,8 @@ public struct PlaylistRules {
 
 /// Transition configuration that maps to the C API's `AutoMixTransitionConfig`.
 public struct TransitionConfig {
+    /// When true, use crossfade between tracks; when false, use hard cut.
+    public var enableTransitions: Bool = true
     /// Number of beats for the crossfade (default: 16).
     public var crossfadeBeats: Float = 16.0
     /// Whether to use an EQ-based transition.
@@ -110,7 +112,8 @@ public struct TransitionConfig {
     /// Time in seconds to smoothly recover stretch back to 1.0 after a transition.
     public var stretchRecoverySeconds: Float = 5.0
     
-    public init(crossfadeBeats: Float = 16.0, useEqSwap: Bool = false, stretchLimit: Float = 0.06, stretchRecoverySeconds: Float = 5.0) {
+    public init(enableTransitions: Bool = true, crossfadeBeats: Float = 16.0, useEqSwap: Bool = false, stretchLimit: Float = 0.06, stretchRecoverySeconds: Float = 5.0) {
+        self.enableTransitions = enableTransitions
         self.crossfadeBeats = crossfadeBeats
         self.useEqSwap = useEqSwap
         self.stretchLimit = stretchLimit

@@ -123,6 +123,7 @@ int main(int argc, char* argv[]) {
     
     // Set transition config
     AutoMixTransitionConfig config = {};
+    config.enable_transitions = 1;
     config.crossfade_beats = crossfade_beats;
     config.use_eq_swap = eq_swap ? 1 : 0;
     config.stretch_limit = 0.06f;

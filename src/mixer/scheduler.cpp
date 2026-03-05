@@ -227,19 +227,17 @@ void Scheduler::rt_update(int frames) {
     float current_pos = active_deck_->position();
     float duration = active_deck_->duration();
     
-    // Check if we should signal a transition
-    if (!transitioning_ && current_index_ < playlist_.size()) {
+    // Check if we should signal a transition (only when transitions are enabled)
+    if (transition_config_.enable_transitions && !transitioning_ && current_index_ < playlist_.size()) {
         const auto& entry = playlist_.entries[current_index_];
         
         float transition_point = duration - transition_config_.max_transition_seconds;
         
-        // Use transition plan if available
         if (entry.transition_to_next) {
             transition_point = entry.transition_to_next->out_point.time_seconds;
         }
         
         if (current_pos >= transition_point && current_index_ + 1 < playlist_.size()) {
-            // Signal control thread to start transition
             if (!transition_trigger_pending_) {
                 transition_trigger_pending_ = true;
             }
@@ -410,36 +408,62 @@ void Scheduler::start_transition() {
         }
     }
     
-    // Get transition parameters
-    float crossfade_duration = transition_config_.crossfade_beats * 60.0f / 120.0f;  // Default 120 BPM
     float stretch_ratio = 1.0f;
     float in_point = 0.0f;
     
-    if (entry.transition_to_next) {
-        crossfade_duration = entry.transition_to_next->crossfade_duration;
+    if (transition_config_.enable_transitions && entry.transition_to_next) {
         stretch_ratio = entry.transition_to_next->bpm_stretch_ratio;
         in_point = entry.transition_to_next->in_point.time_seconds;
     }
+    // When mix is off: always start at 0:00, no time-stretch (actual duration)
     
-    // Setup next deck — apply BPM time-stretch
     next_deck_->set_stretch_ratio(stretch_ratio);
     next_deck_->seek(in_point);
     next_deck_->play();
     
-    // Select crossfader curve based on transition config
+    if (!transition_config_.enable_transitions) {
+        float to = (active_deck_ == deck_a_.get()) ? 1.0f : -1.0f;
+        crossfader_.set_position(to);
+        crossfader_.stop_automation();
+        
+        // Swap decks
+        std::swap(active_deck_, next_deck_);
+        
+        // Stop old deck
+        next_deck_->pause();
+        next_deck_->unload();
+        
+        current_index_++;
+        transitioning_ = false;
+        state_ = PlaybackState::Playing;
+        
+        active_deck_->start_stretch_recovery(transition_config_.stretch_recovery_seconds);
+        
+        // Pre-load next track
+        if (current_index_ + 1 < playlist_.size()) {
+            load_track_to_deck(*next_deck_, playlist_.entries[current_index_ + 1].track_id);
+        }
+        
+        crossfader_.set_position(active_deck_ == deck_a_.get() ? -1.0f : 1.0f);
+        notify_status();
+        return;
+    }
+    
+    // Crossfade mode
+    float crossfade_duration = entry.transition_to_next
+        ? entry.transition_to_next->crossfade_duration
+        : transition_config_.crossfade_beats * 60.0f / 120.0f;
+    
     if (transition_config_.use_eq_swap) {
         crossfader_.set_curve(Crossfader::CurveType::EQSwap);
     } else {
         crossfader_.set_curve(Crossfader::CurveType::EqualPower);
     }
     
-    // Use EQ hint from transition plan to override curve if specified
     if (entry.transition_to_next && entry.transition_to_next->eq_hint.use_eq_swap) {
         crossfader_.set_curve(Crossfader::CurveType::EQSwap);
     }
     
-    // Start crossfade automation — direction depends on which deck is active
-    // If active is deck_a_, animate -1→+1 (A→B); if deck_b_, animate +1→-1 (B→A)
     float from = (active_deck_ == deck_a_.get()) ? -1.0f : 1.0f;
     float to   = (active_deck_ == deck_a_.get()) ? 1.0f : -1.0f;
     int crossfade_frames = static_cast<int>(crossfade_duration * sample_rate_);

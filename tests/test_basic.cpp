@@ -48,6 +48,7 @@ void test_transition_config() {
     assert(engine != nullptr);
     
     AutoMixTransitionConfig config = {};
+    config.enable_transitions = 1;
     config.crossfade_beats = 32.0f;
     config.use_eq_swap = 1;
     config.stretch_limit = 0.08f;

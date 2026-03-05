@@ -77,10 +77,10 @@ const char* automix_get_error(AutoMixEngine* engine) {
  * Library Scanning
  * ============================================================================ */
 
-int automix_scan(AutoMixEngine* engine, const char* music_dir, int recursive) {
+int automix_scan(AutoMixEngine* engine, const char* music_dir, int recursive, int metadata_only) {
     if (!engine || !engine->engine || !music_dir) return AUTOMIX_ERROR_INVALID_ARGUMENT;
     
-    int result = engine->engine->scan(music_dir, recursive != 0);
+    int result = engine->engine->scan(music_dir, recursive != 0, nullptr, metadata_only != 0);
     if (result < 0) {
         engine->last_error = engine->engine->error();
     }
@@ -92,7 +92,8 @@ int automix_scan_with_callback(
     const char* music_dir,
     int recursive,
     AutoMixScanCallback callback,
-    void* user_data
+    void* user_data,
+    int metadata_only
 ) {
     if (!engine || !engine->engine || !music_dir) return AUTOMIX_ERROR_INVALID_ARGUMENT;
     
@@ -103,7 +104,7 @@ int automix_scan_with_callback(
         };
     }
     
-    int result = engine->engine->scan(music_dir, recursive != 0, cpp_callback);
+    int result = engine->engine->scan(music_dir, recursive != 0, cpp_callback, metadata_only != 0);
     if (result < 0) {
         engine->last_error = engine->engine->error();
     }
@@ -421,6 +422,7 @@ void automix_set_transition_config(
     if (!engine || !engine->engine || !config) return;
     
     TransitionConfig cpp_config;
+    cpp_config.enable_transitions = config->enable_transitions != 0;
     cpp_config.crossfade_beats = config->crossfade_beats;
     cpp_config.use_eq_swap = config->use_eq_swap != 0;
     cpp_config.stretch_limit = config->stretch_limit;

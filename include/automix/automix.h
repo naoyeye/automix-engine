@@ -78,6 +78,7 @@ typedef struct {
 
 /* Transition configuration */
 typedef struct {
+    int enable_transitions;     /* 1 = crossfade, 0 = hard cut (default: 1) */
     float crossfade_beats;      /* Number of beats for crossfade (default: 16) */
     int use_eq_swap;            /* Use EQ-based transition */
     float stretch_limit;        /* Max time-stretch ratio (e.g., 0.06 for ±6%) */
@@ -126,9 +127,10 @@ const char* automix_get_error(AutoMixEngine* engine);
  * @param engine Engine instance
  * @param music_dir Path to directory containing music files
  * @param recursive Scan subdirectories
- * @return Number of tracks analyzed, or negative error code
+ * @param metadata_only If non-zero, only collect path/duration/mtime, skip BPM/key analysis
+ * @return Number of tracks processed, or negative error code
  */
-int automix_scan(AutoMixEngine* engine, const char* music_dir, int recursive);
+int automix_scan(AutoMixEngine* engine, const char* music_dir, int recursive, int metadata_only);
 
 /**
  * Scan progress callback type.
@@ -148,7 +150,8 @@ int automix_scan_with_callback(
     const char* music_dir,
     int recursive,
     AutoMixScanCallback callback,
-    void* user_data
+    void* user_data,
+    int metadata_only
 );
 
 /**
