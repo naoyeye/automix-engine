@@ -110,6 +110,7 @@ int main(int argc, char* argv[]) {
 
     // Set a default transition config
     AutoMixTransitionConfig config = {};
+    config.enable_transitions = 1;
     config.crossfade_beats = 16.0f;
     config.use_eq_swap = 0;
     config.stretch_limit = 0.06f;

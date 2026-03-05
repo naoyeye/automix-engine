@@ -253,6 +253,7 @@ struct PlaylistRules {
  * ============================================================================ */
 
 struct TransitionConfig {
+    bool enable_transitions = true;     // When false, use hard cut instead of crossfade
     float crossfade_beats = 16.0f;      // Number of beats for crossfade
     bool use_eq_swap = false;           // Use EQ-based transition
     float stretch_limit = 0.06f;        // Max ±6% time stretch
