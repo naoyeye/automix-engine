@@ -31,6 +31,14 @@ class EngineViewModel: ObservableObject {
     /// 生成播放列表时请求的曲目数（getTrackIDs 失败时用于 fallback 的总数）
     @Published var requestedPlaylistCount: Int = 0
     
+    /// 是否启用 mix 过渡效果；关闭时扫描只做元数据、播放使用硬切
+    @Published var mixEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(mixEnabled, forKey: "automix_mixEnabled")
+            applyTransitionConfig()
+        }
+    }
+    
     private var acoustidApiKey: String?
     private var scanStartTime: Date?
     
@@ -53,6 +61,7 @@ class EngineViewModel: ObservableObject {
     private var transitionProgressCancellable: AnyCancellable?
     
     init() {
+        mixEnabled = UserDefaults.standard.object(forKey: "automix_mixEnabled") as? Bool ?? true
         setupEngine()
     }
     
@@ -77,6 +86,14 @@ class EngineViewModel: ObservableObject {
         let automixDir = appSupport.appendingPathComponent("Automix", isDirectory: true)
         try? fileManager.createDirectory(at: automixDir, withIntermediateDirectories: true)
         return automixDir.appendingPathComponent("automix.db").path
+    }
+
+    /// Mix 关闭时：seed 放首位，其余随机，保证 Create & Play 的 seed 生效
+    private static func _shuffledWithSeedFirst(allTracks: [Int64], seedTrackId: Int64, count: Int) -> [Int64] {
+        let others = allTracks.filter { $0 != seedTrackId }
+        let shuffled = others.shuffled()
+        let head = allTracks.contains(seedTrackId) ? [seedTrackId] : []
+        return head + Array(shuffled.prefix(max(0, count - head.count)))
     }
 
     private static func keysPath() -> String {
@@ -145,10 +162,19 @@ class EngineViewModel: ObservableObject {
             
             // 启动 poll 定时器，驱动曲目切换、预加载等（约 20ms 一次）
             startPollTimer()
+            
+            applyTransitionConfig()
                 
         } catch {
             statusMessage = "Failed to initialize engine: \(error)"
         }
+    }
+    
+    private func applyTransitionConfig() {
+        guard let engine = engine else { return }
+        var config = TransitionConfig()
+        config.enableTransitions = mixEnabled
+        engine.setTransitionConfig(config)
     }
     
     private func startPollTimer() {
@@ -341,7 +367,7 @@ class EngineViewModel: ObservableObject {
         
         Task {
             do {
-                for try await (file, processed, total) in engine.scanProgressStream(musicDir: path, recursive: true) {
+                for try await (file, processed, total) in engine.scanProgressStream(musicDir: path, recursive: true, metadataOnly: !mixEnabled) {
                     await MainActor.run {
                         self.scannedTracks = processed
                         self.totalTracksToScan = total
@@ -421,16 +447,24 @@ class EngineViewModel: ObservableObject {
 
                     // 2. 无共享列表时，生成新列表并保存
                     let allTracks = try engine.searchTracks(pattern: "%")
-                    if let seed = allTracks.first {
-                        let playlistCount = 10
-                        let playlist = try engine.generatePlaylist(seedTrackId: seed, count: playlistCount)
+                    if !allTracks.isEmpty {
+                        let playlistCount = min(10, allTracks.count)
+                        let playlist: AutoMixPlaylist
+                        if mixEnabled {
+                            let seed = allTracks.first!
+                            playlist = try engine.generatePlaylist(seedTrackId: seed, count: playlistCount)
+                        } else {
+                            let shuffled = allTracks.shuffled()
+                            let ids = Array(shuffled.prefix(playlistCount))
+                            playlist = try engine.createPlaylist(trackIds: ids)
+                        }
                         requestedPlaylistCount = playlistCount
                         do {
                             playlistTrackIds = try playlist.getTrackIDs()
                             Self.saveSharedPlaylist(dbPath: dbPath, trackIds: playlistTrackIds)
                         } catch {
                             playlistTrackIds = []
-                            requestedPlaylistCount = 0  // 避免显示误导性的 "0 / 10"
+                            requestedPlaylistCount = 0
                         }
                         try engine.play(playlist: playlist)
                         refreshCurrentTrackInfo(trackId: engine.currentTrackId)
@@ -480,8 +514,16 @@ class EngineViewModel: ObservableObject {
                 playlistTrackIds = []
                 position = 0
             }
-            let playlist = try engine.generatePlaylist(seedTrackId: seedTrackId, count: count)
-            let ids = (try? playlist.getTrackIDs()) ?? []
+            let playlist: AutoMixPlaylist
+            var preCreateIds: [Int64] = []
+            if mixEnabled {
+                playlist = try engine.generatePlaylist(seedTrackId: seedTrackId, count: count)
+            } else {
+                let allTracks = try engine.searchTracks(pattern: "%")
+                preCreateIds = Self._shuffledWithSeedFirst(allTracks: allTracks, seedTrackId: seedTrackId, count: count)
+                playlist = try engine.createPlaylist(trackIds: preCreateIds)
+            }
+            let ids = (try? playlist.getTrackIDs()) ?? preCreateIds
             requestedPlaylistCount = count
             playlistTrackIds = ids
             Self.saveSharedPlaylist(dbPath: Self.persistentDatabasePath(), trackIds: ids)

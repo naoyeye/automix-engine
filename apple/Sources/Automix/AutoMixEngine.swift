@@ -133,13 +133,13 @@ public class AutoMixEngine {
     ///   - recursive: Whether to scan subdirectories recursively.
     ///   - progress: Optional callback closure with parameters (current file path, files processed, total files).
     ///               If omitted, the no-callback variant is called.
-    /// - Returns: The number of tracks successfully analyzed.
+    ///   - metadataOnly: When true, only collect path/duration/mtime without BPM/key analysis.
+    /// - Returns: The number of tracks successfully processed.
     /// - Throws: An `AutoMixError` if scanning fails or a database error occurs.
-    public func scan(musicDir: String, recursive: Bool, progress: ((String, Int, Int) -> Void)? = nil) throws -> Int {
+    public func scan(musicDir: String, recursive: Bool, progress: ((String, Int, Int) -> Void)? = nil, metadataOnly: Bool = false) throws -> Int {
         guard let engine = enginePtr else { throw AutoMixError.notInitialized }
         
         if let progress = progress {
-            // We need a context to pass the closure to the C callback
             let context = ScanContext(callback: progress)
             let contextPtr = Unmanaged.passRetained(context).toOpaque()
             
@@ -154,12 +154,13 @@ public class AutoMixEngine {
                 context.callback(filePath, Int(filesProcessed), Int(filesTotal))
             }
             
-            let result = automix_scan_with_callback(
+            let result = automix_scan_with_callback_ex(
                 engine,
                 musicDir,
                 recursive ? 1 : 0,
                 callback,
-                contextPtr
+                contextPtr,
+                metadataOnly ? 1 : 0
             )
             
             if result < 0 {
@@ -167,7 +168,7 @@ public class AutoMixEngine {
             }
             return Int(result)
         } else {
-            let result = automix_scan(engine, musicDir, recursive ? 1 : 0)
+            let result = automix_scan_ex(engine, musicDir, recursive ? 1 : 0, metadataOnly ? 1 : 0)
             if result < 0 {
                 throw AutoMixError.from(code: Int32(result))
             }
@@ -176,9 +177,9 @@ public class AutoMixEngine {
     }
     
     /// Async version of scan without progress reporting.
-    public func scan(musicDir: String, recursive: Bool) async throws -> Int {
+    public func scan(musicDir: String, recursive: Bool, metadataOnly: Bool = false) async throws -> Int {
         return try await Task.detached(priority: .userInitiated) {
-            try self.scan(musicDir: musicDir, recursive: recursive, progress: nil)
+            try self.scan(musicDir: musicDir, recursive: recursive, progress: nil, metadataOnly: metadataOnly)
         }.value
     }
     
@@ -186,9 +187,8 @@ public class AutoMixEngine {
     ///
     /// Yields `(currentFilePath, filesProcessed, totalFiles)` tuples as scanning progresses.
     /// Supports cooperative cancellation: finishing or cancelling the iteration stops the background scan.
-    public func scanProgressStream(musicDir: String, recursive: Bool) -> AsyncThrowingStream<(String, Int, Int), Error> {
+    public func scanProgressStream(musicDir: String, recursive: Bool, metadataOnly: Bool = false) -> AsyncThrowingStream<(String, Int, Int), Error> {
         return AsyncThrowingStream { continuation in
-            // Wrap the background work in a DispatchWorkItem so it can be cancelled.
             var workItem: DispatchWorkItem!
             workItem = DispatchWorkItem {
                 if workItem.isCancelled {
@@ -196,10 +196,10 @@ public class AutoMixEngine {
                     return
                 }
                 do {
-                    _ = try self.scan(musicDir: musicDir, recursive: recursive) { file, processed, total in
+                    _ = try self.scan(musicDir: musicDir, recursive: recursive, progress: { file, processed, total in
                         if workItem.isCancelled { return }
                         continuation.yield((file, processed, total))
-                    }
+                    }, metadataOnly: metadataOnly)
                     if !workItem.isCancelled {
                         continuation.finish()
                     }
@@ -209,7 +209,6 @@ public class AutoMixEngine {
                     }
                 }
             }
-            // When the consumer cancels or the stream is finished, cancel the background work.
             continuation.onTermination = { @Sendable _ in
                 workItem.cancel()
             }
@@ -519,12 +518,12 @@ public class AutoMixEngine {
     /// - Parameter config: The transition configuration to apply.
     public func setTransitionConfig(_ config: TransitionConfig) {
         guard let engine = enginePtr else { return }
-        var cConfig = AutoMixTransitionConfig(
-            crossfade_beats: config.crossfadeBeats,
-            use_eq_swap: config.useEqSwap ? 1 : 0,
-            stretch_limit: config.stretchLimit,
-            stretch_recovery_seconds: config.stretchRecoverySeconds
-        )
+        var cConfig = CAutomix.AutoMixTransitionConfig()
+        cConfig.enable_transitions = config.enableTransitions ? 1 : 0
+        cConfig.crossfade_beats = config.crossfadeBeats
+        cConfig.use_eq_swap = config.useEqSwap ? 1 : 0
+        cConfig.stretch_limit = config.stretchLimit
+        cConfig.stretch_recovery_seconds = config.stretchRecoverySeconds
         automix_set_transition_config(engine, &cConfig)
     }
     

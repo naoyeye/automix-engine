@@ -43,7 +43,8 @@ bool Engine::is_valid() const {
     return store_ && store_->is_open();
 }
 
-int Engine::scan(const std::string& music_dir, bool recursive, ScanCallback callback) {
+int Engine::scan(const std::string& music_dir, bool recursive, ScanCallback callback,
+                bool metadata_only) {
     if (!is_valid()) {
         last_error_ = "Engine not initialized";
         return -1;
@@ -88,95 +89,133 @@ int Engine::scan(const std::string& music_dir, bool recursive, ScanCallback call
     }
     
     // Multi-threaded scanning
-    // Use half the cores (capped at 4) to avoid overheating while still gaining speedup
     unsigned int hw_threads = std::thread::hardware_concurrency();
     unsigned int num_threads = std::max(1u, std::min(4u, hw_threads / 2));
     num_threads = std::min(num_threads, static_cast<unsigned int>(jobs.size()));
     
     std::atomic<int> job_index{0};
-    std::atomic<int> analyzed_count{0};
+    std::atomic<int> processed_count{0};
     std::atomic<int> progress_count{already_analyzed};
     std::mutex callback_mutex;
     
-    auto worker = [&]() {
-        // Each worker has its own Decoder and Analyzer (no shared state)
-        Decoder local_decoder;
-        Analyzer local_analyzer;
+    if (metadata_only) {
+        // Metadata-only: only get duration, no decode/analyze
+        auto worker = [&]() {
+            Decoder local_decoder;
+            while (true) {
+                int idx = job_index.fetch_add(1);
+                if (idx >= static_cast<int>(jobs.size())) break;
+                
+                const auto& job = jobs[idx];
+                std::string path_str = utils::path_to_absolute(job.path);
+                
+                float duration = local_decoder.get_duration(path_str);
+                if (duration < 0) {
+                    int p = progress_count.fetch_add(1) + 1;
+                    if (callback) {
+                        std::lock_guard<std::mutex> lock(callback_mutex);
+                        callback(path_str, p, total);
+                    }
+                    continue;
+                }
+                
+                {
+                    std::lock_guard<std::mutex> lock(store_->write_mutex());
+                    auto upsert_result = store_->upsert_track_path_duration(path_str, duration, job.file_mtime);
+                    if (upsert_result.ok()) {
+                        processed_count.fetch_add(1);
+                    }
+                }
+                
+                int p = progress_count.fetch_add(1) + 1;
+                if (callback) {
+                    std::lock_guard<std::mutex> lock(callback_mutex);
+                    callback(path_str, p, total);
+                }
+            }
+        };
         
-        while (true) {
-            int idx = job_index.fetch_add(1);
-            if (idx >= static_cast<int>(jobs.size())) break;
-            
-            const auto& job = jobs[idx];
-            std::string path_str = utils::path_to_absolute(job.path);
-            
-            // Decode (analysis mode: mono 22050Hz)
-            auto decode_result = local_decoder.decode_for_analysis(path_str);
-            if (decode_result.failed()) {
-                int p = progress_count.fetch_add(1) + 1;
-                if (callback) {
-                    std::lock_guard<std::mutex> lock(callback_mutex);
-                    callback(path_str, p, total);
-                }
-                continue;
-            }
-            
-            // Analyze
-            auto analyze_result = local_analyzer.analyze(decode_result.value());
-            if (analyze_result.failed()) {
-                int p = progress_count.fetch_add(1) + 1;
-                if (callback) {
-                    std::lock_guard<std::mutex> lock(callback_mutex);
-                    callback(path_str, p, total);
-                }
-                continue;
-            }
-            
-            // Store (thread-safe: lock the Store's write mutex)
-            TrackInfo track;
-            track.path = path_str;
-            track.bpm = analyze_result.value().bpm;
-            track.beats = analyze_result.value().beats;
-            track.key = analyze_result.value().key;
-            track.mfcc = analyze_result.value().mfcc;
-            track.chroma = analyze_result.value().chroma;
-            track.energy_curve = analyze_result.value().energy_curve;
-            track.duration = analyze_result.value().duration;
-            track.analyzed_at = utils::current_timestamp();
-            track.file_modified_at = job.file_mtime;
-            
-            {
-                std::lock_guard<std::mutex> lock(store_->write_mutex());
-                auto upsert_result = store_->upsert_track(track);
-                if (upsert_result.ok()) {
-                    analyzed_count.fetch_add(1);
-                }
-            }
-            
-            int p = progress_count.fetch_add(1) + 1;
-            if (callback) {
-                std::lock_guard<std::mutex> lock(callback_mutex);
-                callback(path_str, p, total);
-            }
+        std::vector<std::thread> threads;
+        threads.reserve(num_threads);
+        for (unsigned int i = 0; i < num_threads; ++i) {
+            threads.emplace_back(worker);
         }
-    };
-    
-    // Launch worker threads
-    std::vector<std::thread> threads;
-    threads.reserve(num_threads);
-    for (unsigned int i = 0; i < num_threads; ++i) {
-        threads.emplace_back(worker);
+        for (auto& t : threads) {
+            t.join();
+        }
+    } else {
+        // Full analysis: decode + analyze
+        auto worker = [&]() {
+            Decoder local_decoder;
+            Analyzer local_analyzer;
+            
+            while (true) {
+                int idx = job_index.fetch_add(1);
+                if (idx >= static_cast<int>(jobs.size())) break;
+                
+                const auto& job = jobs[idx];
+                std::string path_str = utils::path_to_absolute(job.path);
+                
+                auto decode_result = local_decoder.decode_for_analysis(path_str);
+                if (decode_result.failed()) {
+                    int p = progress_count.fetch_add(1) + 1;
+                    if (callback) {
+                        std::lock_guard<std::mutex> lock(callback_mutex);
+                        callback(path_str, p, total);
+                    }
+                    continue;
+                }
+                
+                auto analyze_result = local_analyzer.analyze(decode_result.value());
+                if (analyze_result.failed()) {
+                    int p = progress_count.fetch_add(1) + 1;
+                    if (callback) {
+                        std::lock_guard<std::mutex> lock(callback_mutex);
+                        callback(path_str, p, total);
+                    }
+                    continue;
+                }
+                
+                TrackInfo track;
+                track.path = path_str;
+                track.bpm = analyze_result.value().bpm;
+                track.beats = analyze_result.value().beats;
+                track.key = analyze_result.value().key;
+                track.mfcc = analyze_result.value().mfcc;
+                track.chroma = analyze_result.value().chroma;
+                track.energy_curve = analyze_result.value().energy_curve;
+                track.duration = analyze_result.value().duration;
+                track.analyzed_at = utils::current_timestamp();
+                track.file_modified_at = job.file_mtime;
+                
+                {
+                    std::lock_guard<std::mutex> lock(store_->write_mutex());
+                    auto upsert_result = store_->upsert_track(track);
+                    if (upsert_result.ok()) {
+                        processed_count.fetch_add(1);
+                    }
+                }
+                
+                int p = progress_count.fetch_add(1) + 1;
+                if (callback) {
+                    std::lock_guard<std::mutex> lock(callback_mutex);
+                    callback(path_str, p, total);
+                }
+            }
+        };
+        
+        std::vector<std::thread> threads;
+        threads.reserve(num_threads);
+        for (unsigned int i = 0; i < num_threads; ++i) {
+            threads.emplace_back(worker);
+        }
+        for (auto& t : threads) {
+            t.join();
+        }
     }
     
-    // Wait for all workers to finish
-    for (auto& t : threads) {
-        t.join();
-    }
-    
-    // Cleanup removed files
     store_->cleanup_missing_files();
-    
-    return already_analyzed + analyzed_count.load();
+    return already_analyzed + processed_count.load();
 }
 
 int Engine::track_count() const {

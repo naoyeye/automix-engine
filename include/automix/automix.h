@@ -82,7 +82,14 @@ typedef struct {
     int use_eq_swap;            /* Use EQ-based transition */
     float stretch_limit;        /* Max time-stretch ratio (e.g., 0.06 for ±6%) */
     float stretch_recovery_seconds; /* Seconds to smoothly return stretch to 1.0 after transition */
+    int enable_transitions;     /* 1 = crossfade, 0 = hard cut (default: 1) */
 } AutoMixTransitionConfig;
+
+/**
+ * Return an AutoMixTransitionConfig populated with library defaults.
+ * Prefer this over zero-initialisation to ensure enable_transitions=1.
+ */
+AutoMixTransitionConfig automix_transition_config_default(void);
 
 /* Playback status callback */
 typedef void (*AutoMixStatusCallback)(
@@ -126,9 +133,23 @@ const char* automix_get_error(AutoMixEngine* engine);
  * @param engine Engine instance
  * @param music_dir Path to directory containing music files
  * @param recursive Scan subdirectories
- * @return Number of tracks analyzed, or negative error code
+ * @return Number of tracks processed, or negative error code
  */
 int automix_scan(AutoMixEngine* engine, const char* music_dir, int recursive);
+
+/**
+ * Scan a directory for music files, with optional metadata-only mode.
+ * In metadata-only mode only path/duration/mtime are collected; BPM/key
+ * analysis is skipped.  A later call with metadata_only=0 will still perform
+ * full analysis on any track whose analysis is incomplete.
+ * 
+ * @param engine Engine instance
+ * @param music_dir Path to directory containing music files
+ * @param recursive Scan subdirectories
+ * @param metadata_only If non-zero, only collect path/duration/mtime, skip BPM/key analysis
+ * @return Number of tracks processed, or negative error code
+ */
+int automix_scan_ex(AutoMixEngine* engine, const char* music_dir, int recursive, int metadata_only);
 
 /**
  * Scan progress callback type.
@@ -149,6 +170,19 @@ int automix_scan_with_callback(
     int recursive,
     AutoMixScanCallback callback,
     void* user_data
+);
+
+/**
+ * Scan with progress callback, with optional metadata-only mode.
+ * See automix_scan_ex() for the metadata_only semantics.
+ */
+int automix_scan_with_callback_ex(
+    AutoMixEngine* engine,
+    const char* music_dir,
+    int recursive,
+    AutoMixScanCallback callback,
+    void* user_data,
+    int metadata_only
 );
 
 /**

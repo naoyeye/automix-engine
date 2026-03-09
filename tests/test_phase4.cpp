@@ -502,6 +502,60 @@ void test_scheduler_skip() {
     std::cout << "PASSED\n";
 }
 
+void test_scheduler_hard_cut() {
+    std::cout << "Test: Scheduler hard cut (enable_transitions=false)... ";
+
+    g_test_tracks.clear();
+    g_test_tracks.push_back(make_sine(440.0f, 2.0f));
+    g_test_tracks.push_back(make_sine(880.0f, 2.0f));
+
+    Scheduler sched;
+    sched.set_track_loader(test_track_loader);
+
+    TransitionConfig config;
+    config.enable_transitions = false;
+    config.max_transition_seconds = 0.5f;
+    sched.set_transition_config(config);
+
+    // Playlist with a transition plan that should be ignored when Mix is off
+    TransitionPlan plan;
+    plan.from_track_id = 1;
+    plan.to_track_id = 2;
+    plan.out_point.time_seconds = 1.5f;
+    plan.in_point.time_seconds = 0.5f;  // Would be used in crossfade mode
+    plan.crossfade_duration = 0.5f;
+    plan.bpm_stretch_ratio = 1.1f;       // Would stretch in crossfade mode
+
+    Playlist playlist;
+    playlist.entries.push_back({1, plan});
+    playlist.entries.push_back({2, std::nullopt});
+
+    assert(sched.load_playlist(playlist));
+    sched.play();
+    assert(sched.current_track_id() == 1);
+    assert(sched.state() == PlaybackState::Playing);
+
+    // Trigger a skip (hard cut) via skip()
+    assert(sched.skip());
+    sched.poll();
+
+    // With transitions disabled the deck swap is synchronous: state must be
+    // Playing (never Transitioning) and the track must have changed.
+    assert(sched.state() == PlaybackState::Playing);
+    assert(sched.current_track_id() == 2);
+
+    // Playback position on the incoming track must start at 0:00 (no in-point)
+    assert(sched.position() < 0.1f);
+
+    // Render a small block to confirm audio is flowing from the new track
+    std::vector<float> output(512 * 2, 0.0f);
+    int rendered = sched.render(output.data(), 512, kSampleRate);
+    assert(rendered > 0);
+    assert(is_nonzero(output.data(), 512));
+
+    std::cout << "PASSED\n";
+}
+
 void test_scheduler_previous() {
     std::cout << "Test: Scheduler previous... ";
     
@@ -704,6 +758,7 @@ int main() {
     test_scheduler_basic_playback();
     test_scheduler_transition();
     test_scheduler_skip();
+    test_scheduler_hard_cut();
     test_scheduler_previous();
     test_scheduler_render_prealloc();
     

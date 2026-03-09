@@ -44,6 +44,14 @@ public:
     Result<int64_t> upsert_track(const TrackInfo& track);
     
     /**
+     * Insert or update a track with path and duration only (metadata-only scan).
+     * For new tracks, sets analyzed_at=0 so that a later full scan detects the
+     * incomplete analysis.  For existing tracks, only duration and
+     * file_modified_at are updated; analysis fields are left untouched.
+     */
+    Result<int64_t> upsert_track_path_duration(const std::string& path, float duration, int64_t file_modified_at);
+    
+    /**
      * Get track by ID.
      */
     std::optional<TrackInfo> get_track(int64_t id);

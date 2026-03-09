@@ -22,6 +22,7 @@ void print_usage(const char* program) {
               << "  -d, --database <path>  Database file path (default: " << default_hint << ")\n"
               << "  -r, --recursive        Scan subdirectories (default: true)\n"
               << "  -n, --no-recursive     Don't scan subdirectories\n"
+              << "  -m, --metadata-only    Only collect path/duration, skip BPM/key analysis\n"
               << "  -h, --help             Show this help\n";
 }
 
@@ -37,6 +38,7 @@ int main(int argc, char* argv[]) {
     std::string db_path_arg;  // From -d, empty if not specified
     std::string music_dir;
     bool recursive = true;
+    int metadata_only = 0;
     
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -54,6 +56,8 @@ int main(int argc, char* argv[]) {
             recursive = true;
         } else if (strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "--no-recursive") == 0) {
             recursive = false;
+        } else if (strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--metadata-only") == 0) {
+            metadata_only = 1;
         } else if (argv[i][0] != '-') {
             music_dir = argv[i];
         } else {
@@ -78,11 +82,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    std::cout << "Scanning " << music_dir << "...\n";
+    std::cout << "Scanning " << music_dir << (metadata_only ? " (metadata only)" : "") << "...\n";
     
     // Scan
-    int result = automix_scan_with_callback(
-        engine, music_dir.c_str(), recursive ? 1 : 0, scan_callback, nullptr);
+    int result = automix_scan_with_callback_ex(
+        engine, music_dir.c_str(), recursive ? 1 : 0, scan_callback, nullptr, metadata_only);
     
     if (result < 0) {
         std::cerr << "Error: " << automix_get_error(engine) << "\n";
@@ -91,7 +95,7 @@ int main(int argc, char* argv[]) {
     }
     
     int total = automix_get_track_count(engine);
-    std::cout << "\nDone! " << result << " tracks analyzed.\n";
+    std::cout << "\nDone! " << result << " tracks " << (metadata_only ? "processed" : "analyzed") << ".\n";
     std::cout << "Total tracks in library: " << total << "\n";
     
     automix_destroy(engine);
