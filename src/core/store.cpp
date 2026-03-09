@@ -159,6 +159,51 @@ Result<int64_t> Store::upsert_track(const TrackInfo& track) {
     return existing ? existing->id : sqlite3_last_insert_rowid(db_);
 }
 
+Result<int64_t> Store::upsert_track_path_duration(const std::string& path, float duration, int64_t file_modified_at) {
+    if (!db_) return "Database not open";
+    
+    // Insert a new stub track (analyzed_at=0 signals "not yet fully analyzed").
+    // For existing tracks only update duration and file_modified_at so that
+    // previously computed BPM/key/feature data is preserved.
+    const char* sql = R"(
+        INSERT INTO tracks (path, bpm, beats, key, mfcc, chroma, energy_curve, duration, analyzed_at, file_modified_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+            duration = excluded.duration,
+            file_modified_at = excluded.file_modified_at
+    )";
+    
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        return std::string("Prepare failed: ") + sqlite3_errmsg(db_);
+    }
+    
+    // Empty blobs for vector fields on new-row path
+    static const uint8_t empty_blob[1] = {0};
+    
+    sqlite3_bind_text  (stmt, 1, path.c_str(), -1, SQLITE_TRANSIENT); // path
+    sqlite3_bind_double(stmt, 2, 0.0);                                 // bpm = 0
+    sqlite3_bind_blob  (stmt, 3, empty_blob, 0, SQLITE_TRANSIENT);    // beats = empty
+    sqlite3_bind_text  (stmt, 4, "", -1, SQLITE_TRANSIENT);           // key = ""
+    sqlite3_bind_blob  (stmt, 5, empty_blob, 0, SQLITE_TRANSIENT);    // mfcc = empty
+    sqlite3_bind_blob  (stmt, 6, empty_blob, 0, SQLITE_TRANSIENT);    // chroma = empty
+    sqlite3_bind_blob  (stmt, 7, empty_blob, 0, SQLITE_TRANSIENT);    // energy_curve = empty
+    sqlite3_bind_double(stmt, 8, duration);                            // duration
+    sqlite3_bind_int64 (stmt, 9, 0);                                   // analyzed_at = 0
+    sqlite3_bind_int64 (stmt, 10, file_modified_at);                   // file_modified_at
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        return std::string("Insert failed: ") + sqlite3_errmsg(db_);
+    }
+    
+    auto existing = get_track_by_path(path);
+    return existing ? existing->id : sqlite3_last_insert_rowid(db_);
+}
+
 std::optional<TrackInfo> Store::get_track(int64_t id) {
     if (!db_) return std::nullopt;
     
@@ -361,6 +406,8 @@ bool Store::delete_track_by_path(const std::string& path) {
 bool Store::needs_analysis(const std::string& path, int64_t file_modified_at) {
     auto track = get_track_by_path(path);
     if (!track) return true;  // Not in database
+    
+    if (track->analyzed_at == 0) return true;  // Added via metadata-only scan; full analysis pending
     
     return track->file_modified_at < file_modified_at;
 }

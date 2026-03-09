@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Scanning " << music_dir << (metadata_only ? " (metadata only)" : "") << "...\n";
     
     // Scan
-    int result = automix_scan_with_callback(
+    int result = automix_scan_with_callback_ex(
         engine, music_dir.c_str(), recursive ? 1 : 0, scan_callback, nullptr, metadata_only);
     
     if (result < 0) {

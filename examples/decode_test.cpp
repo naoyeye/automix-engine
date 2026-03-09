@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
     
     // Scan the single file (by scanning its parent directory with pattern matching)
     // For a single file test, we'll just use the scan function
-    int result = automix_scan(engine, audio_file.c_str(), 0, 0);
+    int result = automix_scan_ex(engine, audio_file.c_str(), 0, 0);
     
     if (result < 0) {
         std::cerr << "Error: " << automix_get_error(engine) << "\n";

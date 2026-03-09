@@ -185,9 +185,11 @@ TEST(store_search_tracks) {
 TEST(store_needs_analysis) {
     Store store(":memory:");
     
+    // Track with full analysis (analyzed_at > 0)
     TrackInfo track;
     track.path = "/test/audio.mp3";
     track.file_modified_at = 1000;
+    track.analyzed_at = 9999;  // Fully analyzed
     store.upsert_track(track);
     
     // Same modification time - no analysis needed
@@ -201,6 +203,60 @@ TEST(store_needs_analysis) {
     
     // Non-existent file - needs analysis
     assert(store.needs_analysis("/nonexistent.mp3", 1000));
+
+    // Track with analyzed_at=0 (metadata-only scan) always needs full analysis
+    TrackInfo stub;
+    stub.path = "/test/stub.mp3";
+    stub.file_modified_at = 1000;
+    stub.analyzed_at = 0;  // Not yet fully analyzed
+    store.upsert_track(stub);
+    assert(store.needs_analysis(stub.path, 1000));   // same mtime still needs analysis
+    assert(store.needs_analysis(stub.path, 999));    // even older mtime
+    assert(store.needs_analysis(stub.path, 1001));   // newer mtime
+}
+
+TEST(store_upsert_path_duration) {
+    Store store(":memory:");
+
+    // Insert a new stub via metadata-only helper
+    auto result = store.upsert_track_path_duration("/test/meta.mp3", 180.5f, 2000);
+    assert(result.ok());
+
+    auto track = store.get_track_by_path("/test/meta.mp3");
+    assert(track.has_value());
+    assert(track->duration > 180.0f && track->duration < 181.0f);
+    assert(track->file_modified_at == 2000);
+    // analyzed_at must remain 0 so that needs_analysis returns true for full scan
+    assert(track->analyzed_at == 0);
+    assert(track->bpm == 0.0f);
+    assert(track->key.empty());
+
+    // needs_analysis should return true (analyzed_at==0)
+    assert(store.needs_analysis("/test/meta.mp3", 2000));
+
+    // Now simulate a full analysis write
+    TrackInfo full;
+    full.path = "/test/meta.mp3";
+    full.bpm = 128.0f;
+    full.key = "8A";
+    full.duration = 180.5f;
+    full.analyzed_at = 50000;
+    full.file_modified_at = 2000;
+    store.upsert_track(full);
+
+    // After full analysis needs_analysis should return false (mtime unchanged)
+    assert(!store.needs_analysis("/test/meta.mp3", 2000));
+
+    // A second metadata-only upsert on the already-analyzed track must NOT
+    // overwrite the analysis fields (bpm, key, analyzed_at)
+    auto result2 = store.upsert_track_path_duration("/test/meta.mp3", 181.0f, 2000);
+    assert(result2.ok());
+    auto after = store.get_track_by_path("/test/meta.mp3");
+    assert(after.has_value());
+    assert(after->analyzed_at == 50000);               // preserved
+    assert(std::abs(after->bpm - 128.0f) < 0.01f);    // preserved
+    assert(after->key == "8A");                        // preserved
+    assert(after->duration > 180.9f);                  // updated to new value
 }
 
 /* ============================================================================
@@ -636,6 +692,7 @@ int main() {
     RUN_TEST(store_get_all_tracks);
     RUN_TEST(store_search_tracks);
     RUN_TEST(store_needs_analysis);
+    RUN_TEST(store_upsert_path_duration);
     
     std::cout << "\n--- Store Metadata Module ---\n";
     RUN_TEST(store_metadata_upsert_and_get);
