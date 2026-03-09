@@ -119,16 +119,9 @@ int Engine::scan(const std::string& music_dir, bool recursive, ScanCallback call
                     continue;
                 }
                 
-                TrackInfo track;
-                track.path = path_str;
-                track.duration = duration;
-                track.file_modified_at = job.file_mtime;
-                track.analyzed_at = utils::current_timestamp();
-                // bpm=0, key="", empty vectors left as default
-                
                 {
                     std::lock_guard<std::mutex> lock(store_->write_mutex());
-                    auto upsert_result = store_->upsert_track(track);
+                    auto upsert_result = store_->upsert_track_path_duration(path_str, duration, job.file_mtime);
                     if (upsert_result.ok()) {
                         processed_count.fetch_add(1);
                     }

@@ -154,7 +154,7 @@ public class AutoMixEngine {
                 context.callback(filePath, Int(filesProcessed), Int(filesTotal))
             }
             
-            let result = automix_scan_with_callback(
+            let result = automix_scan_with_callback_ex(
                 engine,
                 musicDir,
                 recursive ? 1 : 0,
@@ -168,7 +168,7 @@ public class AutoMixEngine {
             }
             return Int(result)
         } else {
-            let result = automix_scan(engine, musicDir, recursive ? 1 : 0, metadataOnly ? 1 : 0)
+            let result = automix_scan_ex(engine, musicDir, recursive ? 1 : 0, metadataOnly ? 1 : 0)
             if result < 0 {
                 throw AutoMixError.from(code: Int32(result))
             }

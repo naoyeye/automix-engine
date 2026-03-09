@@ -77,7 +77,17 @@ const char* automix_get_error(AutoMixEngine* engine) {
  * Library Scanning
  * ============================================================================ */
 
-int automix_scan(AutoMixEngine* engine, const char* music_dir, int recursive, int metadata_only) {
+int automix_scan(AutoMixEngine* engine, const char* music_dir, int recursive) {
+    if (!engine || !engine->engine || !music_dir) return AUTOMIX_ERROR_INVALID_ARGUMENT;
+    
+    int result = engine->engine->scan(music_dir, recursive != 0, nullptr, false);
+    if (result < 0) {
+        engine->last_error = engine->engine->error();
+    }
+    return result;
+}
+
+int automix_scan_ex(AutoMixEngine* engine, const char* music_dir, int recursive, int metadata_only) {
     if (!engine || !engine->engine || !music_dir) return AUTOMIX_ERROR_INVALID_ARGUMENT;
     
     int result = engine->engine->scan(music_dir, recursive != 0, nullptr, metadata_only != 0);
@@ -88,6 +98,29 @@ int automix_scan(AutoMixEngine* engine, const char* music_dir, int recursive, in
 }
 
 int automix_scan_with_callback(
+    AutoMixEngine* engine,
+    const char* music_dir,
+    int recursive,
+    AutoMixScanCallback callback,
+    void* user_data
+) {
+    if (!engine || !engine->engine || !music_dir) return AUTOMIX_ERROR_INVALID_ARGUMENT;
+    
+    ScanCallback cpp_callback = nullptr;
+    if (callback) {
+        cpp_callback = [callback, user_data](const std::string& file, int processed, int total) {
+            callback(file.c_str(), processed, total, user_data);
+        };
+    }
+    
+    int result = engine->engine->scan(music_dir, recursive != 0, cpp_callback, false);
+    if (result < 0) {
+        engine->last_error = engine->engine->error();
+    }
+    return result;
+}
+
+int automix_scan_with_callback_ex(
     AutoMixEngine* engine,
     const char* music_dir,
     int recursive,
@@ -430,6 +463,16 @@ void automix_set_transition_config(
     
     engine->engine->set_transition_config(cpp_config);
     engine->transition_config = cpp_config;
+}
+
+AutoMixTransitionConfig automix_transition_config_default(void) {
+    AutoMixTransitionConfig cfg;
+    cfg.crossfade_beats = 16.0f;
+    cfg.use_eq_swap = 0;
+    cfg.stretch_limit = 0.06f;
+    cfg.stretch_recovery_seconds = 6.0f;
+    cfg.enable_transitions = 1;
+    return cfg;
 }
 
 /* ============================================================================
