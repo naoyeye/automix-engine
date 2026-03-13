@@ -43,7 +43,7 @@ Options:
 
 Behavior:
   - Validates clean git workspace and current branch
-  - Release is only allowed from remote default branch (main branch)
+  - Release is only allowed from the remote default branch
   - Rejects existing local/remote tag vX.Y.Z
   - Updates:
       CMakeLists.txt                      project(... VERSION X.Y.Z)
@@ -144,23 +144,23 @@ elif git show-ref --verify --quiet "refs/remotes/$REMOTE/main"; then
 elif git show-ref --verify --quiet "refs/remotes/$REMOTE/master"; then
   PRIMARY_BRANCH="master"
 else
-  err "Unable to detect $REMOTE default branch (main branch)."
+  err "Unable to detect $REMOTE remote default branch."
   err "Set remote HEAD first, or ensure $REMOTE/main or $REMOTE/master exists."
   exit 1
 fi
 
 if [[ -n "$BRANCH" && "$BRANCH" != "$PRIMARY_BRANCH" ]]; then
-  err "Release is only allowed from the main branch: '$PRIMARY_BRANCH'."
+  err "Release is only allowed from the remote default branch: '$PRIMARY_BRANCH'."
   err "Provided --branch '$BRANCH' is not allowed."
   exit 1
 fi
 
 BRANCH="$PRIMARY_BRANCH"
-log "Using release branch (main): $BRANCH"
+log "Using remote default branch: $BRANCH"
 
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
-  err "Current branch is '$CURRENT_BRANCH', expected main branch '$BRANCH'"
+  err "Current branch is '$CURRENT_BRANCH', expected remote default branch '$BRANCH'"
   err "Switch branch first: git checkout $BRANCH"
   exit 1
 fi
