@@ -81,7 +81,7 @@ cd /path/to/automix-engine
 | 参数 | 说明 |
 |------|------|
 | `--version X.Y.Z` | 必填，目标 SemVer 版本号 |
-| `--branch <name>` | 可选，指定发版分支（默认自动识别远端默认分支） |
+| `--branch <name>` | 兼容参数；仅允许等于远端默认分支（主分支） |
 | `--remote origin` | 可选，指定远端（默认 `origin`） |
 | `--no-push` | 仅本地提交与打 tag，不推送 |
 | `--skip-build` | 跳过本地构建验证 |
@@ -89,7 +89,7 @@ cd /path/to/automix-engine
 
 ### 防呆检查（内置）
 
-- 当前分支必须是目标发版分支（默认自动识别远端默认分支，如 `master`/`main`）。
+- 当前分支必须是远端默认分支（主分支，如 `master`/`main`），禁止从 `dev` 发版。
 - 工作区必须干净（包含 staged/unstaged）。
 - 目标 tag（`vX.Y.Z`）本地与远端都不能已存在。
 - 本地分支必须与远端分支对齐（防止在落后状态发版）。
@@ -106,6 +106,9 @@ cd /path/to/automix-engine
 ```bash
 # 标准发版（构建 + 提交 + 打 tag + 推送）
 ./scripts/release.sh --version 1.1.0
+
+# 显式指定主分支（仅当它等于远端默认分支时允许）
+./scripts/release.sh --version 1.1.0 --branch master
 
 # 仅本地执行，不推送
 ./scripts/release.sh --version 1.1.0 --no-push
