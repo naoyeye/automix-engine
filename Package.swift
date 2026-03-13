@@ -28,6 +28,12 @@ let package = Package(
             path: "apple/Sources/Automix",
             linkerSettings: [
                 .unsafeFlags(["-L", "cmake-build"]),
+                .unsafeFlags(["-L", "/opt/homebrew/lib"], .when(platforms: [.macOS])),
+                .unsafeFlags(["-L", "/opt/homebrew/opt/ffmpeg/lib"], .when(platforms: [.macOS])),
+                .unsafeFlags(["-L", "/usr/local/lib"], .when(platforms: [.macOS])),
+                .unsafeFlags(["-L", "/usr/local/opt/ffmpeg/lib"], .when(platforms: [.macOS])),
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "/opt/homebrew/lib"], .when(platforms: [.macOS])),
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "/usr/local/lib"], .when(platforms: [.macOS])),
                 .linkedLibrary("automix"),
                 .linkedLibrary("avformat"),
                 .linkedLibrary("avcodec"),

@@ -34,13 +34,13 @@ enum TrackMetadataLoader {
                 if let key = item.commonKey?.rawValue {
                     switch key {
                     case AVMetadataKey.commonKeyTitle.rawValue:
-                        title = item.stringValue
+                        title = try? await item.load(.stringValue)
                     case AVMetadataKey.commonKeyArtist.rawValue:
-                        artist = item.stringValue
+                        artist = try? await item.load(.stringValue)
                     case AVMetadataKey.commonKeyAlbumName.rawValue:
-                        album = item.stringValue
+                        album = try? await item.load(.stringValue)
                     case AVMetadataKey.commonKeyArtwork.rawValue:
-                        if let data = item.dataValue {
+                        if let data = try? await item.load(.dataValue) {
                             artwork = NSImage(data: data)
                         }
                     default:

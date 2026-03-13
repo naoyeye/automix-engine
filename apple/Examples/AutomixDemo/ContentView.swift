@@ -426,6 +426,41 @@ struct ContentView: View {
             
             Toggle("Mix 过渡效果", isOn: $viewModel.mixEnabled)
                 .help(viewModel.mixEnabled ? "关闭后仅做元数据扫描，曲间硬切" : "开启后分析 BPM/调性，曲间平滑过渡")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Last.fm")
+                    .font(.headline)
+                Toggle("启用 Scrobble（50% 进度）", isOn: $viewModel.lastfmEnabled)
+                TextField("Last.fm 用户名（可选）", text: $viewModel.lastfmUsername)
+                    .textFieldStyle(.roundedBorder)
+                Text(viewModel.lastfmAuthStateText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("Keys 来源：\(viewModel.keysSourceDescription)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                HStack {
+                    Button("连接 Last.fm") {
+                        viewModel.connectLastfm()
+                    }
+                    .buttonStyle(.bordered)
+                    .pointingHandCursor()
+                    Button("完成授权") {
+                        viewModel.completeLastfmAuthorization()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .pointingHandCursor()
+                    .disabled(!viewModel.lastfmEnabled)
+                    if viewModel.lastfmAuthorized {
+                        Button("断开") {
+                            viewModel.disconnectLastfm()
+                        }
+                        .buttonStyle(.bordered)
+                        .pointingHandCursor()
+                    }
+                }
+            }
             
             Divider()
             
@@ -473,6 +508,7 @@ struct ContentView: View {
                     trackInfoContent(
                         info: info,
                         metadata: viewModel.currentTrackMetadata,
+                        scrobbleStatus: viewModel.lastfmScrobbleStatus,
                         trackIndex: viewModel.currentTrackIndex,
                         totalCount: viewModel.totalPlaylistCount
                     )
@@ -484,6 +520,7 @@ struct ContentView: View {
                     trackInfoContent(
                         info: nextInfo,
                         metadata: viewModel.nextTrackMetadata,
+                        scrobbleStatus: .pending,
                         trackIndex: viewModel.playlistTrackIds.firstIndex(of: nextInfo.id).map { $0 + 1 } ?? (viewModel.currentTrackIndex + 1),
                         totalCount: viewModel.totalPlaylistCount
                     )
@@ -502,6 +539,7 @@ struct ContentView: View {
     private func trackInfoContent(
         info: TrackInfo,
         metadata: TrackMetadata?,
+        scrobbleStatus: LastfmScrobbleStatus,
         trackIndex: Int,
         totalCount: Int
     ) -> some View {
@@ -511,20 +549,28 @@ struct ContentView: View {
         VStack(spacing: 12) {
             // 封面
             if let artwork = metadata?.artwork {
-                Image(nsImage: artwork)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 160, height: 160)
-                    .cornerRadius(10)
+                ZStack(alignment: .bottomTrailing) {
+                    Image(nsImage: artwork)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 160, height: 160)
+                        .cornerRadius(10)
+                    scrobbleStatusBadge(scrobbleStatus)
+                        .padding(6)
+                }
             } else {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 160, height: 160)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 50))
-                            .foregroundColor(.gray)
-                    )
+                ZStack(alignment: .bottomTrailing) {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 160, height: 160)
+                        .overlay(
+                            Image(systemName: "music.note")
+                                .font(.system(size: 50))
+                                .foregroundColor(.gray)
+                        )
+                    scrobbleStatusBadge(scrobbleStatus)
+                        .padding(6)
+                }
             }
             
             // 曲目名称（固定一行，超出省略）
@@ -560,6 +606,24 @@ struct ContentView: View {
                 .opacity(totalCount > 0 ? 1 : 0)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func scrobbleStatusBadge(_ status: LastfmScrobbleStatus) -> some View {
+        let (icon, color): (String, Color) = {
+            switch status {
+            case .success:
+                return ("checkmark.circle.fill", .green)
+            case .failure:
+                return ("xmark.circle.fill", .red)
+            case .pending:
+                return ("clock.fill", .gray)
+            }
+        }()
+        Image(systemName: icon)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundColor(color)
+            .shadow(color: .black.opacity(0.25), radius: 2, x: 0, y: 1)
     }
     
     private func displayTitleForInfo(_ info: TrackInfo, metadata: TrackMetadata?) -> String {

@@ -3,6 +3,12 @@ import Combine
 import Automix
 import AppKit
 
+enum LastfmScrobbleStatus {
+    case pending
+    case success
+    case failure
+}
+
 @MainActor
 class EngineViewModel: ObservableObject {
     @Published var isPlaying: Bool = false
@@ -38,9 +44,34 @@ class EngineViewModel: ObservableObject {
             applyTransitionConfig()
         }
     }
+    @Published var lastfmEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(lastfmEnabled, forKey: "automix_lastfm_enabled")
+            updateLastfmAuthStateText()
+        }
+    }
+    @Published var lastfmUsername: String {
+        didSet {
+            UserDefaults.standard.set(lastfmUsername, forKey: "automix_lastfm_username")
+            if lastfmAuthorized {
+                updateLastfmAuthStateText()
+            }
+        }
+    }
+    @Published private(set) var lastfmAuthorized: Bool = false
+    @Published private(set) var lastfmAuthStateText: String = "未连接"
+    @Published private(set) var lastfmScrobbleStatus: LastfmScrobbleStatus = .pending
+    @Published private(set) var keysSourceDescription: String = "未加载 keys 配置"
     
     private var acoustidApiKey: String?
+    private var lastfmApiKey: String?
+    private var lastfmSharedSecret: String?
+    private var lastfmSessionKey: String?
+    private var lastfmAuthToken: String?
     private var scanStartTime: Date?
+    private let scrobbleQueueStore = ScrobbleQueueStore()
+    private var currentTrackStartTimestamp: Int64 = 0
+    private var hasScrobbledCurrentTrack = false
     
     /// 当前是第几首（1-based）
     var currentTrackIndex: Int {
@@ -62,7 +93,11 @@ class EngineViewModel: ObservableObject {
     
     init() {
         mixEnabled = UserDefaults.standard.object(forKey: "automix_mixEnabled") as? Bool ?? true
+        lastfmEnabled = UserDefaults.standard.object(forKey: "automix_lastfm_enabled") as? Bool ?? false
+        lastfmUsername = UserDefaults.standard.string(forKey: "automix_lastfm_username") ?? ""
+        lastfmSessionKey = UserDefaults.standard.string(forKey: "automix_lastfm_session_key")
         setupEngine()
+        updateLastfmAuthStateText()
     }
     
     deinit {
@@ -96,27 +131,52 @@ class EngineViewModel: ObservableObject {
         return head + Array(shuffled.prefix(max(0, count - head.count)))
     }
 
-    private static func keysPath() -> String {
+    private static func keysPathAndSource() -> (path: String, source: String) {
         let fileManager = FileManager.default
+        if let envPath = ProcessInfo.processInfo.environment["AUTOMIX_KEYS_PATH"], !envPath.isEmpty {
+            if fileManager.fileExists(atPath: envPath) {
+                return (envPath, "环境变量 AUTOMIX_KEYS_PATH")
+            }
+        }
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             let automixDir = appSupport.appendingPathComponent("AutomixDemo", isDirectory: true)
             let path = automixDir.appendingPathComponent("keys.json").path
-            if fileManager.fileExists(atPath: path) { return path }
+            if fileManager.fileExists(atPath: path) { return (path, "Application Support") }
         }
-        
+
+#if DEBUG
         let localPath = URL(fileURLWithPath: fileManager.currentDirectoryPath).appendingPathComponent("keys.json").path
-        if fileManager.fileExists(atPath: localPath) { return localPath }
-        
-        return Bundle.main.path(forResource: "keys", ofType: "json") ?? ""
+        if fileManager.fileExists(atPath: localPath) { return (localPath, "当前工作目录（Debug）") }
+#endif
+
+        if let bundlePath = Bundle.main.path(forResource: "keys", ofType: "json"),
+           fileManager.fileExists(atPath: bundlePath) {
+            return (bundlePath, "App Bundle")
+        }
+
+        return ("", "未找到 keys.json")
     }
     
     private func loadKeys() {
-        let path = Self.keysPath()
+        let resolved = Self.keysPathAndSource()
+        let path = resolved.path
+        keysSourceDescription = resolved.source
+        guard !path.isEmpty else { return }
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            keysSourceDescription = "\(resolved.source)（读取失败）"
             return
         }
-        acoustidApiKey = json["apikey"]
+        if let acoustid = json["acoustid"] as? [String: Any] {
+            acoustidApiKey = acoustid["apikey"] as? String
+        } else {
+            acoustidApiKey = json["apikey"] as? String
+        }
+        if let lastfm = json["lastfm"] as? [String: Any] {
+            lastfmApiKey = lastfm["apikey"] as? String
+            lastfmSharedSecret = lastfm["sharedsecret"] as? String
+        }
+        keysSourceDescription = "\(resolved.source)：\(path)"
     }
 
     /// 共享播放列表文件路径（与 CLI 一致，与数据库同目录）
@@ -145,6 +205,8 @@ class EngineViewModel: ObservableObject {
     func setupEngine() {
         loadKeys()
         let dbPath = Self.persistentDatabasePath()
+        SystemNotifier.shared.requestAuthorizationIfNeeded()
+        updateLastfmAuthStateText()
         do {
             engine = try AutoMixEngine(dbPath: dbPath)
             statusMessage = "Engine initialized at \(dbPath)"
@@ -188,6 +250,7 @@ class EngineViewModel: ObservableObject {
                 // 过渡期间不更新 position，避免显示混乱
                 if self.isPlaying, engine.state != .transitioning {
                     self.position = engine.position
+                    self.checkScrobbleThreshold()
                 }
             }
     }
@@ -205,6 +268,11 @@ class EngineViewModel: ObservableObject {
         let newTrackId = status.currentTrackId
         let trackChanged = newTrackId != self.currentTrackId
         self.currentTrackId = newTrackId
+        if trackChanged, newTrackId != 0 {
+            hasScrobbledCurrentTrack = false
+            currentTrackStartTimestamp = Int64(Date().timeIntervalSince1970 - Double(max(0, status.position)))
+            lastfmScrobbleStatus = .pending
+        }
         
         if status.state == .transitioning {
             // 过渡期间：加载下一曲信息，启动视觉过渡动画；不更新 currentTrackInfo
@@ -239,6 +307,9 @@ class EngineViewModel: ObservableObject {
                     playlistTrackIds.append(newTrackId)
                 }
             } else if newTrackId == 0, status.state == .stopped {
+                hasScrobbledCurrentTrack = false
+                currentTrackStartTimestamp = 0
+                lastfmScrobbleStatus = .pending
                 metadataTask?.cancel()
                 metadataTask = nil
                 nextMetadataTask?.cancel()
@@ -279,6 +350,222 @@ class EngineViewModel: ObservableObject {
         if !isTransitioning {
             transitionProgress = 0
         }
+    }
+
+    private var canUseLastfm: Bool {
+        guard let apiKey = lastfmApiKey, !apiKey.isEmpty else { return false }
+        guard let sharedSecret = lastfmSharedSecret, !sharedSecret.isEmpty else { return false }
+        return true
+    }
+
+    private func updateLastfmAuthStateText() {
+        let hasSession = !(lastfmSessionKey ?? "").isEmpty
+        lastfmAuthorized = hasSession
+        if !canUseLastfm {
+            lastfmAuthStateText = "缺少 API Key"
+        } else if hasSession {
+            let shownUser = lastfmUsername.isEmpty ? "已连接" : "已连接：\(lastfmUsername)"
+            lastfmAuthStateText = shownUser
+        } else if let token = lastfmAuthToken, !token.isEmpty {
+            lastfmAuthStateText = "待授权（请在浏览器确认）"
+        } else {
+            lastfmAuthStateText = "未连接"
+        }
+    }
+
+    func connectLastfm() {
+        guard canUseLastfm, let apiKey = lastfmApiKey else {
+            statusMessage = "Last.fm API 配置缺失（来源：\(keysSourceDescription)）"
+            return
+        }
+        Task {
+            do {
+                let token = try await LastfmService.fetchAuthToken(apiKey: apiKey)
+                guard let authURL = LastfmService.authorizationURL(apiKey: apiKey, token: token) else {
+                    statusMessage = "无法生成 Last.fm 授权链接"
+                    return
+                }
+                lastfmAuthToken = token
+                updateLastfmAuthStateText()
+                NSWorkspace.shared.open(authURL)
+                statusMessage = "已打开 Last.fm 授权页，请登录并授权后点击“完成授权”"
+            } catch {
+                statusMessage = "获取 Last.fm 授权 token 失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    func completeLastfmAuthorization() {
+        guard
+            canUseLastfm,
+            let apiKey = lastfmApiKey,
+            let sharedSecret = lastfmSharedSecret,
+            let token = lastfmAuthToken,
+            !token.isEmpty
+        else {
+            statusMessage = "暂无待完成的 Last.fm 授权"
+            return
+        }
+        Task {
+            do {
+                let session = try await LastfmService.fetchSession(
+                    apiKey: apiKey,
+                    sharedSecret: sharedSecret,
+                    token: token
+                )
+                lastfmSessionKey = session.key
+                lastfmUsername = session.name
+                UserDefaults.standard.set(session.key, forKey: "automix_lastfm_session_key")
+                lastfmAuthToken = nil
+                updateLastfmAuthStateText()
+                statusMessage = "Last.fm 授权成功：\(session.name)"
+            } catch {
+                statusMessage = "完成 Last.fm 授权失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    func disconnectLastfm() {
+        lastfmSessionKey = nil
+        lastfmAuthToken = nil
+        UserDefaults.standard.removeObject(forKey: "automix_lastfm_session_key")
+        updateLastfmAuthStateText()
+        statusMessage = "已断开 Last.fm"
+    }
+
+    private func checkScrobbleThreshold() {
+        guard lastfmEnabled, currentTrackId != 0, !hasScrobbledCurrentTrack else { return }
+        var info = currentTrackInfo
+        if info == nil, let engine = engine {
+            info = try? engine.trackInfo(id: currentTrackId)
+            if info != nil {
+                currentTrackInfo = info
+            }
+        }
+        guard let info, info.duration > 0 else { return }
+        let progress = Double(position) / Double(info.duration)
+        guard progress >= 0.5 else { return }
+
+        hasScrobbledCurrentTrack = true
+        let payload = makeCurrentScrobblePayload(trackInfo: info)
+        Task {
+            await processScrobbleAtHalf(payload: payload)
+        }
+    }
+
+    private func makeCurrentScrobblePayload(trackInfo: TrackInfo) -> PendingScrobbleEvent {
+        let metadata = currentTrackMetadata
+        let parsed = Self.parseArtistAndTitle(fromPath: trackInfo.path)
+        let cleanArtist = metadata?.artist?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTitle = metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let artist = (cleanArtist?.isEmpty == false)
+            ? (cleanArtist ?? "Unknown Artist")
+            : (parsed.artist ?? "Unknown Artist")
+        let title = (cleanTitle?.isEmpty == false)
+            ? (cleanTitle ?? "")
+            : (parsed.title ?? URL(fileURLWithPath: trackInfo.path).deletingPathExtension().lastPathComponent)
+        let album = metadata?.album
+        let startTs = currentTrackStartTimestamp > 0
+            ? currentTrackStartTimestamp
+            : Int64(Date().timeIntervalSince1970 - Double(max(0, position)))
+        let eventId = "\(trackInfo.id)-\(startTs)"
+        let nowTs = Int64(Date().timeIntervalSince1970)
+        return PendingScrobbleEvent(
+            eventId: eventId,
+            trackId: trackInfo.id,
+            artist: artist,
+            track: title,
+            album: album,
+            timestamp: startTs,
+            createdAt: nowTs,
+            retries: 0,
+            lastError: nil
+        )
+    }
+
+    private func processScrobbleAtHalf(payload: PendingScrobbleEvent) async {
+        guard
+            lastfmEnabled,
+            canUseLastfm,
+            let apiKey = lastfmApiKey,
+            let sharedSecret = lastfmSharedSecret,
+            let sessionKey = lastfmSessionKey,
+            !sessionKey.isEmpty
+        else {
+            await scrobbleQueueStore.enqueueIfMissing(payload)
+            await MainActor.run {
+                lastfmScrobbleStatus = .failure
+                statusMessage = "Last.fm 未授权，已加入重试队列"
+                SystemNotifier.shared.notifyScrobbleFailure(error: "请先完成 Last.fm 授权", queued: true)
+            }
+            return
+        }
+
+        await flushPendingScrobbles(apiKey: apiKey, sharedSecret: sharedSecret, sessionKey: sessionKey)
+        do {
+            try await LastfmService.scrobble(
+                apiKey: apiKey,
+                sharedSecret: sharedSecret,
+                sessionKey: sessionKey,
+                payload: .init(artist: payload.artist, track: payload.track, album: payload.album, timestamp: payload.timestamp)
+            )
+            await MainActor.run {
+                lastfmScrobbleStatus = .success
+                statusMessage = "Scrobbled: \(payload.artist) - \(payload.track)"
+                SystemNotifier.shared.notifyScrobbleSuccess(artist: payload.artist, track: payload.track, retried: false)
+            }
+        } catch {
+            let shouldRetry = LastfmService.isRetryableScrobbleError(error)
+            if shouldRetry {
+                await scrobbleQueueStore.enqueueIfMissing(payload)
+                await scrobbleQueueStore.markFailure(eventId: payload.eventId, error: error.localizedDescription)
+            }
+            await MainActor.run {
+                lastfmScrobbleStatus = .failure
+                statusMessage = "Scrobble failed: \(error.localizedDescription)"
+                SystemNotifier.shared.notifyScrobbleFailure(error: error.localizedDescription, queued: shouldRetry)
+            }
+        }
+    }
+
+    private func flushPendingScrobbles(apiKey: String, sharedSecret: String, sessionKey: String) async {
+        let pending = await scrobbleQueueStore.all()
+        guard !pending.isEmpty else { return }
+        for event in pending {
+            do {
+                try await LastfmService.scrobble(
+                    apiKey: apiKey,
+                    sharedSecret: sharedSecret,
+                    sessionKey: sessionKey,
+                    payload: .init(artist: event.artist, track: event.track, album: event.album, timestamp: event.timestamp)
+                )
+                await scrobbleQueueStore.remove(eventId: event.eventId)
+                await MainActor.run {
+                    SystemNotifier.shared.notifyScrobbleSuccess(artist: event.artist, track: event.track, retried: true)
+                }
+            } catch {
+                let shouldRetry = LastfmService.isRetryableScrobbleError(error)
+                if shouldRetry {
+                    await scrobbleQueueStore.markFailure(eventId: event.eventId, error: error.localizedDescription)
+                } else {
+                    await scrobbleQueueStore.remove(eventId: event.eventId)
+                }
+                await MainActor.run {
+                    SystemNotifier.shared.notifyScrobbleFailure(error: error.localizedDescription, queued: shouldRetry)
+                }
+            }
+        }
+    }
+
+    private static func parseArtistAndTitle(fromPath path: String) -> (artist: String?, title: String?) {
+        let base = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        let parts = base.components(separatedBy: " - ").map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if parts.count >= 2 {
+            return (parts[0].isEmpty ? nil : parts[0], parts[1].isEmpty ? nil : parts[1])
+        }
+        return (nil, base.isEmpty ? nil : base)
     }
     
     private func refreshNextTrackInfo(trackId: Int64) {
@@ -493,6 +780,9 @@ class EngineViewModel: ObservableObject {
         guard let engine = engine, !isTransitioning else { return }
         do {
             try engine.seek(seconds: seconds)
+            if currentTrackId != 0 {
+                currentTrackStartTimestamp = Int64(Date().timeIntervalSince1970 - Double(max(0, seconds)))
+            }
         } catch {
             statusMessage = "Seek failed: \(error)"
         }
