@@ -65,7 +65,7 @@ Essentia 不在 Homebrew 官方仓库，需要从源码编译。相关文档
 
 `rm -rf cmake-build`
 
-1. 重新配置 (指定 C++17)
+2. 重新配置 (指定 C++17)
 
 `CXXFLAGS="-std=c++17" python3 waf configure --build-static --with-examples --with-vamp`
 
@@ -372,8 +372,4 @@ automix-engine/
 ## License
 
 MIT
-
-```markdown
-release
-```
 

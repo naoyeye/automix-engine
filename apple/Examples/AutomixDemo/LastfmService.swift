@@ -167,7 +167,9 @@ enum LastfmService {
         } else {
             log("<- non-http response: \(type(of: response))")
         }
-        log("<- body: \(responseText)")
+        #if DEBUG
+        log("<- body: \(redactedResponseLogString(responseText))")
+        #endif
         guard let http = response as? HTTPURLResponse else {
             throw LastfmError.invalidResponse
         }
@@ -290,6 +292,26 @@ enum LastfmService {
         let prefix = value.prefix(4)
         let suffix = value.suffix(4)
         return "\(prefix)...\(suffix)"
+    }
+
+    // Redacts known sensitive fields (e.g. session key) from a raw JSON response string.
+    private static func redactedResponseLogString(_ text: String) -> String {
+        // Mask the "key" field value in auth.getSession JSON responses.
+        let pattern = #"("key"\s*:\s*")([^"]+)(")"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        // Collect (range, replacement) pairs computed entirely from the original `text`,
+        // then apply in reverse order so earlier offsets remain valid.
+        let replacements: [(Range<String.Index>, String)] = matches.compactMap { match in
+            guard let valueRange = Range(match.range(at: 2), in: text) else { return nil }
+            return (valueRange, maskSecret(String(text[valueRange])))
+        }
+        var result = text
+        for (range, replacement) in replacements.reversed() {
+            result.replaceSubrange(range, with: replacement)
+        }
+        return result
     }
 
     private static func log(_ message: String) {

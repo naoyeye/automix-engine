@@ -362,7 +362,13 @@ class EngineViewModel: ObservableObject {
         let hasSession = !(lastfmSessionKey ?? "").isEmpty
         lastfmAuthorized = hasSession
         if !canUseLastfm {
-            lastfmAuthStateText = "缺少 API Key"
+            let missing: String
+            if lastfmApiKey == nil || (lastfmApiKey ?? "").isEmpty {
+                missing = "API Key"
+            } else {
+                missing = "Shared Secret"
+            }
+            lastfmAuthStateText = "缺少 \(missing)"
         } else if hasSession {
             let shownUser = lastfmUsername.isEmpty ? "已连接" : "已连接：\(lastfmUsername)"
             lastfmAuthStateText = shownUser
