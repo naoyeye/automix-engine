@@ -185,7 +185,7 @@ if [[ "$LOCAL_HEAD" != "$REMOTE_HEAD" ]]; then
   exit 1
 fi
 
-readarray -t VERSION_INFO < <(python3 - "$CMAKE_FILE" "$XCODEGEN_FILE" "$VERSION" <<'PY'
+VERSION_INFO_RAW="$(python3 - "$CMAKE_FILE" "$XCODEGEN_FILE" "$VERSION" <<'PY'
 import pathlib
 import re
 import sys
@@ -228,17 +228,22 @@ print(marketing_version)
 print(str(current_build))
 print(str(next_build))
 PY
-)
+)"
 
-if [[ "${VERSION_INFO[0]:-}" == ERR:* ]]; then
-  err "${VERSION_INFO[0]#ERR:}"
+VERSION_INFO_LINE_1="$(printf '%s\n' "$VERSION_INFO_RAW" | sed -n '1p')"
+VERSION_INFO_LINE_2="$(printf '%s\n' "$VERSION_INFO_RAW" | sed -n '2p')"
+VERSION_INFO_LINE_3="$(printf '%s\n' "$VERSION_INFO_RAW" | sed -n '3p')"
+VERSION_INFO_LINE_4="$(printf '%s\n' "$VERSION_INFO_RAW" | sed -n '4p')"
+
+if [[ "${VERSION_INFO_LINE_1:-}" == ERR:* ]]; then
+  err "${VERSION_INFO_LINE_1#ERR:}"
   exit 1
 fi
 
-CURRENT_CMAKE_VERSION="${VERSION_INFO[0]}"
-CURRENT_MARKETING_VERSION="${VERSION_INFO[1]}"
-CURRENT_BUILD_VERSION="${VERSION_INFO[2]}"
-NEXT_BUILD_VERSION="${VERSION_INFO[3]}"
+CURRENT_CMAKE_VERSION="${VERSION_INFO_LINE_1}"
+CURRENT_MARKETING_VERSION="${VERSION_INFO_LINE_2}"
+CURRENT_BUILD_VERSION="${VERSION_INFO_LINE_3}"
+NEXT_BUILD_VERSION="${VERSION_INFO_LINE_4}"
 
 log "Current CMake version      : $CURRENT_CMAKE_VERSION"
 log "Current MARKETING_VERSION  : $CURRENT_MARKETING_VERSION"
