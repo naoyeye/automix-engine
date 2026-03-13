@@ -197,11 +197,11 @@ target_version = sys.argv[3]
 cmake_text = cmake_file.read_text(encoding="utf-8")
 yml_text = xcodegen_file.read_text(encoding="utf-8")
 
-cmake_match = re.search(r"(project\(\s*automix\s+VERSION\s+)(\d+\.\d+\.\d+)(\s+LANGUAGES\s+CXX\s+C\s*\))", cmake_text)
+cmake_match = re.search(r"project\s*\(\s*automix\b[^)]*\bVERSION\s+(\d+\.\d+\.\d+)", cmake_text, flags=re.DOTALL)
 if not cmake_match:
-    print("ERR:CMakeLists.txt does not contain 'project(automix VERSION ... LANGUAGES CXX C)'")
+    print("ERR:CMakeLists.txt does not contain 'project(automix VERSION X.Y.Z ...)'")
     sys.exit(1)
-cmake_version = cmake_match.group(2)
+cmake_version = cmake_match.group(1)
 
 marketing_match = re.search(r"(^\s*MARKETING_VERSION:\s*)(\d+\.\d+\.\d+)\s*$", yml_text, flags=re.M)
 if not marketing_match:
@@ -218,6 +218,10 @@ next_build = current_build + 1
 
 def parse_semver(v: str):
     return tuple(int(x) for x in v.split("."))
+
+if cmake_version != marketing_version:
+    print(f"ERR:version skew: CMakeLists.txt has {cmake_version} but project.yml has {marketing_version}. Sync them before releasing.")
+    sys.exit(1)
 
 if parse_semver(target_version) <= parse_semver(marketing_version):
     print(f"ERR:target version {target_version} must be greater than current MARKETING_VERSION {marketing_version}")
