@@ -60,6 +60,7 @@ _deps/
 # IDE and Editor
 .idea/
 .vscode/
+.swiftpm/
 *.xcodeproj/
 *.xcworkspace/
 *.swp
@@ -68,6 +69,7 @@ _deps/
 .project
 .cproject
 .settings/
+apple/Apps/AutomixMac/.derivedData/
 
 # macOS
 .DS_Store

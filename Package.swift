@@ -1,7 +1,15 @@
 // swift-tools-version: 5.9
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
+import Foundation
 import PackageDescription
+
+// Resolve the Homebrew prefix from the environment (set automatically by Homebrew, or override
+// manually). This avoids hard-coding paths and ensures the correct architecture is used:
+//   - Apple Silicon Macs: /opt/homebrew  (default)
+//   - Intel Macs:         /usr/local
+// To override: `export HOMEBREW_PREFIX=/usr/local` before running `swift build`.
+let brewPrefix = ProcessInfo.processInfo.environment["HOMEBREW_PREFIX"] ?? "/opt/homebrew"
 
 let package = Package(
     name: "Automix",
@@ -28,6 +36,9 @@ let package = Package(
             path: "apple/Sources/Automix",
             linkerSettings: [
                 .unsafeFlags(["-L", "cmake-build"]),
+                .unsafeFlags(["-L", "\(brewPrefix)/lib"], .when(platforms: [.macOS])),
+                .unsafeFlags(["-L", "\(brewPrefix)/opt/ffmpeg/lib"], .when(platforms: [.macOS])),
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "\(brewPrefix)/lib"], .when(platforms: [.macOS])),
                 .linkedLibrary("automix"),
                 .linkedLibrary("avformat"),
                 .linkedLibrary("avcodec"),

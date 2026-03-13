@@ -2,6 +2,31 @@
 
 本目录包含 AutoMix Engine 的辅助脚本。
 
+## switch_arm64.sh
+
+在 Apple Silicon 上一键切换到原生 arm64 构建链。脚本会自动安装/使用 `/opt/homebrew` 的 arm64 Homebrew，安装依赖并重建 `cmake-build`（`libautomix.a` 为 arm64）。
+
+### 使用方式
+
+```bash
+# 在项目根目录下运行
+./scripts/switch_arm64.sh
+```
+
+### 行为说明
+
+- 自动安装 arm64 Homebrew（若不存在）。
+- 安装常用依赖：`cmake`、`pkg-config`、`ffmpeg`、`sqlite`、`chromaprint`、`rubberband`、`fftw`、`libsamplerate`、`libyaml`、`taglib`。
+- 以 `-DCMAKE_OSX_ARCHITECTURES=arm64` 重新生成并编译 `cmake-build`。
+- 若 arm64 环境找不到 `essentia`，会自动使用 `-DENABLE_ESSENTIA=OFF` 继续构建（核心功能可用）。
+
+### 注意事项
+
+- 仅适用于 macOS + Apple Silicon（`arm64`）。
+- 执行后建议在 Xcode 中执行 `Product > Clean Build Folder` 再重新 Build。
+
+---
+
 ## preview_transition.sh
 
 在两首音频文件之间渲染过渡片段，无需使用主曲库。脚本会创建临时数据库、扫描两个文件、渲染过渡并输出 WAV，最后自动清理临时文件。
@@ -36,6 +61,57 @@ cd /path/to/automix-engine
 
 ./scripts/preview_transition.sh track1.aiff track2.flac my_transition.wav
 # 生成 my_transition.wav
+```
+
+---
+
+## release.sh
+
+一键发版脚本：自动执行版本更新、防呆检查、构建验证、提交、打 tag 与推送。
+
+### 使用方式
+
+```bash
+# 在项目根目录下运行（示例发布 1.1.0）
+./scripts/release.sh --version 1.1.0
+```
+
+### 常用参数
+
+| 参数 | 说明 |
+|------|------|
+| `--version X.Y.Z` | 必填，目标 SemVer 版本号 |
+| `--branch <name>` | 可选，指定发版分支（默认自动识别远端默认分支） |
+| `--remote origin` | 可选，指定远端（默认 `origin`） |
+| `--no-push` | 仅本地提交与打 tag，不推送 |
+| `--skip-build` | 跳过本地构建验证 |
+| `-y, --yes` | 非交互模式，跳过确认 |
+
+### 防呆检查（内置）
+
+- 当前分支必须是目标发版分支（默认自动识别远端默认分支，如 `master`/`main`）。
+- 工作区必须干净（包含 staged/unstaged）。
+- 目标 tag（`vX.Y.Z`）本地与远端都不能已存在。
+- 本地分支必须与远端分支对齐（防止在落后状态发版）。
+- 目标版本号必须大于当前 `MARKETING_VERSION`。
+
+### 自动更新文件
+
+- `CMakeLists.txt`：`project(automix VERSION X.Y.Z ...)`
+- `apple/Apps/AutomixMac/project.yml`：`MARKETING_VERSION: X.Y.Z`
+- `apple/Apps/AutomixMac/project.yml`：`CURRENT_PROJECT_VERSION` 自动 `+1`
+
+### 示例
+
+```bash
+# 标准发版（构建 + 提交 + 打 tag + 推送）
+./scripts/release.sh --version 1.1.0
+
+# 仅本地执行，不推送
+./scripts/release.sh --version 1.1.0 --no-push
+
+# CI 或自动化场景
+./scripts/release.sh --version 1.1.0 --yes
 ```
 
 ---

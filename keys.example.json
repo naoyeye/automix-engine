@@ -1,0 +1,9 @@
+{
+  "acoustid": {
+    "apikey": "YOUR_ACOUSTID_API_KEY"
+  },
+  "lastfm": {
+    "apikey": "YOUR_LASTFM_API_KEY",
+    "sharedsecret": "YOUR_LASTFM_SHARED_SECRET"
+  }
+}
