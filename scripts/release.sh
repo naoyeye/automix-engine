@@ -34,7 +34,7 @@ Required:
   --version X.Y.Z        Target SemVer version (e.g. 1.1.0)
 
 Options:
-  --branch NAME          Release branch (default: remote HEAD branch)
+  --branch NAME          Compatibility option; must equal remote default branch
   --remote NAME          Remote name (default: origin)
   --no-push              Create commit/tag only, do not push
   --skip-build           Skip local build verification
@@ -43,6 +43,7 @@ Options:
 
 Behavior:
   - Validates clean git workspace and current branch
+  - Release is only allowed from remote default branch (main branch)
   - Rejects existing local/remote tag vX.Y.Z
   - Updates:
       CMakeLists.txt                      project(... VERSION X.Y.Z)
@@ -135,24 +136,31 @@ if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "$BRANCH" ]]; then
-  DEFAULT_BRANCH_REF="$(git symbolic-ref --quiet --short "refs/remotes/$REMOTE/HEAD" 2>/dev/null || true)"
-  if [[ -n "$DEFAULT_BRANCH_REF" ]]; then
-    BRANCH="${DEFAULT_BRANCH_REF#"$REMOTE/"}"
-  elif git show-ref --verify --quiet "refs/remotes/$REMOTE/master"; then
-    BRANCH="master"
-  elif git show-ref --verify --quiet "refs/remotes/$REMOTE/main"; then
-    BRANCH="main"
-  else
-    BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-    log "Unable to detect $REMOTE default branch, fallback to current branch: $BRANCH"
-  fi
-  log "Using default release branch: $BRANCH"
+DEFAULT_BRANCH_REF="$(git symbolic-ref --quiet --short "refs/remotes/$REMOTE/HEAD" 2>/dev/null || true)"
+if [[ -n "$DEFAULT_BRANCH_REF" ]]; then
+  PRIMARY_BRANCH="${DEFAULT_BRANCH_REF#"$REMOTE/"}"
+elif git show-ref --verify --quiet "refs/remotes/$REMOTE/main"; then
+  PRIMARY_BRANCH="main"
+elif git show-ref --verify --quiet "refs/remotes/$REMOTE/master"; then
+  PRIMARY_BRANCH="master"
+else
+  err "Unable to detect $REMOTE default branch (main branch)."
+  err "Set remote HEAD first, or ensure $REMOTE/main or $REMOTE/master exists."
+  exit 1
 fi
+
+if [[ -n "$BRANCH" && "$BRANCH" != "$PRIMARY_BRANCH" ]]; then
+  err "Release is only allowed from the main branch: '$PRIMARY_BRANCH'."
+  err "Provided --branch '$BRANCH' is not allowed."
+  exit 1
+fi
+
+BRANCH="$PRIMARY_BRANCH"
+log "Using release branch (main): $BRANCH"
 
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
-  err "Current branch is '$CURRENT_BRANCH', expected '$BRANCH'"
+  err "Current branch is '$CURRENT_BRANCH', expected main branch '$BRANCH'"
   err "Switch branch first: git checkout $BRANCH"
   exit 1
 fi
