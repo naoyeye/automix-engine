@@ -2,6 +2,8 @@
 
 本目录包含 AutoMix Engine 的辅助脚本。
 
+> 提示：项目根目录提供了统一入口 `Makefile`（`make help` 可查看所有快捷命令），适合日常开发使用；本目录脚本更偏向单一任务和流水线操作。
+
 ## switch_arm64.sh
 
 在 Apple Silicon 上一键切换到原生 arm64 构建链。脚本会自动安装/使用 `/opt/homebrew` 的 arm64 Homebrew，安装依赖并重建 `cmake-build`（`libautomix.a` 为 arm64）。
@@ -16,9 +18,9 @@
 ### 行为说明
 
 - 自动安装 arm64 Homebrew（若不存在）。
-- 安装常用依赖：`cmake`、`pkg-config`、`ffmpeg`、`sqlite`、`chromaprint`、`rubberband`、`fftw`、`libsamplerate`、`libyaml`、`taglib`。
+- 安装常用依赖：`cmake`、`pkg-config`、`ffmpeg`、`sqlite`、`chromaprint`、`rubberband`、`fftw`、`libsamplerate`、`libyaml`、`taglib`、`eigen`、`python`。
 - 以 `-DCMAKE_OSX_ARCHITECTURES=arm64` 重新生成并编译 `cmake-build`。
-- 若 arm64 环境找不到 `essentia`，会自动使用 `-DENABLE_ESSENTIA=OFF` 继续构建（核心功能可用）。
+- 仅使用 arm64 `pkg-config` 解析依赖；若找不到 `essentia` 会直接失败（Essentia 为必需依赖）。
 
 ### 注意事项
 

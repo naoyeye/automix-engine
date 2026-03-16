@@ -110,16 +110,32 @@ class EngineViewModel: ObservableObject {
     
     /// 返回持久化数据库路径。优先级：AUTOMIX_DB 环境变量 > Application Support/Automix/automix.db，
     /// 与 CLI 工具共用同一默认路径。会尝试从临时目录迁移已有数据库。
+    private static func appSupportSubdirectory(_ name: String) -> URL? {
+        let fileManager = FileManager.default
+        do {
+            let appSupport = try fileManager.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+            let dir = appSupport.appendingPathComponent(name, isDirectory: true)
+            try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        } catch {
+            print("[EngineViewModel] resolve app support subdirectory failed (\(name)): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     private static func persistentDatabasePath() -> String {
         if let envDb = ProcessInfo.processInfo.environment["AUTOMIX_DB"], !envDb.isEmpty {
             return envDb
         }
         let fileManager = FileManager.default
-        guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        guard let automixDir = appSupportSubdirectory("Automix") else {
             return fileManager.temporaryDirectory.appendingPathComponent("automix.db").path
         }
-        let automixDir = appSupport.appendingPathComponent("Automix", isDirectory: true)
-        try? fileManager.createDirectory(at: automixDir, withIntermediateDirectories: true)
         return automixDir.appendingPathComponent("automix.db").path
     }
 
@@ -138,8 +154,7 @@ class EngineViewModel: ObservableObject {
                 return (envPath, "环境变量 AUTOMIX_KEYS_PATH")
             }
         }
-        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            let automixDir = appSupport.appendingPathComponent("AutomixDemo", isDirectory: true)
+        if let automixDir = appSupportSubdirectory("AutomixDemo") {
             let path = automixDir.appendingPathComponent("keys.json").path
             if fileManager.fileExists(atPath: path) { return (path, "Application Support") }
         }

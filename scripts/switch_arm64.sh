@@ -5,7 +5,7 @@ set -euo pipefail
 # - Ensures arm64 Homebrew is available
 # - Installs required dependencies
 # - Rebuilds cmake-build/libautomix.a for arm64
-# - Tries to keep Essentia enabled if available via pkg-config
+# - Requires Essentia to be available in arm64 pkg-config
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -47,8 +47,7 @@ What it does:
 4) Verifies libautomix.a is arm64
 
 Notes:
-- If `essentia` pkg-config is missing under arm64, script automatically builds with
-  -DENABLE_ESSENTIA=OFF (core features still build).
+- `essentia` is required. If arm64 pkg-config cannot resolve it, the script exits.
 - You may still need to restart Xcode and clean build folder after switching.
 EOF
   exit 0
@@ -69,7 +68,8 @@ BREW_PREFIX="$(/usr/bin/arch -arm64 "$BREW_BIN" --prefix)"
 log "Using arm64 Homebrew: $BREW_PREFIX"
 
 export PATH="$BREW_PREFIX/bin:$BREW_PREFIX/sbin:$PATH"
-export PKG_CONFIG_PATH="$BREW_PREFIX/lib/pkgconfig:$BREW_PREFIX/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export PKG_CONFIG_PATH="$BREW_PREFIX/lib/pkgconfig:$BREW_PREFIX/share/pkgconfig"
+export PKG_CONFIG_LIBDIR="$BREW_PREFIX/lib/pkgconfig:$BREW_PREFIX/share/pkgconfig:/usr/lib/pkgconfig"
 export CMAKE_PREFIX_PATH="$BREW_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
 
 log "Updating Homebrew metadata ..."
@@ -77,20 +77,21 @@ log "Updating Homebrew metadata ..."
 
 log "Installing arm64 dependencies ..."
 /usr/bin/arch -arm64 "$BREW_BIN" install \
-  cmake pkg-config ffmpeg sqlite chromaprint rubberband fftw libsamplerate libyaml taglib || true
+  cmake pkg-config ffmpeg sqlite chromaprint rubberband fftw libsamplerate libyaml taglib eigen python || true
 
 # Install missing formulae if install command above partially failed.
-for f in cmake pkg-config ffmpeg sqlite chromaprint rubberband fftw libsamplerate libyaml taglib; do
+for f in cmake pkg-config ffmpeg sqlite chromaprint rubberband fftw libsamplerate libyaml taglib eigen python; do
   if ! /usr/bin/arch -arm64 "$BREW_BIN" list --versions "$f" >/dev/null 2>&1; then
     log "Retry install formula: $f"
     /usr/bin/arch -arm64 "$BREW_BIN" install "$f"
   fi
 done
 
-ENABLE_ESSENTIA="ON"
-if ! /usr/bin/arch -arm64 pkg-config --exists essentia 2>/dev/null; then
-  ENABLE_ESSENTIA="OFF"
-  log "arm64 essentia not found via pkg-config; build will continue with ENABLE_ESSENTIA=OFF"
+if ! /usr/bin/arch -arm64 "$BREW_PREFIX/bin/pkg-config" --exists essentia 2>/dev/null; then
+  err "arm64 essentia not found via $BREW_PREFIX/bin/pkg-config"
+  err "Build halted because Essentia is required by this project."
+  err "Install Essentia for arm64 (ensure $BREW_PREFIX/lib/pkgconfig/essentia.pc exists), then rerun."
+  exit 1
 fi
 
 log "Recreating arm64 build directory ..."
@@ -99,7 +100,8 @@ rm -rf "$BUILD_DIR"
 cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DENABLE_ESSENTIA="$ENABLE_ESSENTIA"
+  -DENABLE_ESSENTIA=ON \
+  -DPKG_CONFIG_EXECUTABLE="$BREW_PREFIX/bin/pkg-config"
 
 cmake --build "$BUILD_DIR" -j"$(sysctl -n hw.ncpu)"
 
