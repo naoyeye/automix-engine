@@ -108,7 +108,7 @@ cd /path/to/automix-engine
 ./scripts/release.sh --version 1.1.0
 
 # 显式指定主分支（仅当它等于远端默认分支时允许）
-./scripts/release.sh --version 1.1.0 --branch master
+./scripts/release.sh --version 1.1.0 --branch <default-branch>
 
 # 仅本地执行，不推送
 ./scripts/release.sh --version 1.1.0 --no-push
