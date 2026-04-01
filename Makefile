@@ -20,7 +20,8 @@ help: ; @echo "AutoMix shortcuts:"; \
 	echo "  make build         - build libautomix + SwiftPM AutomixDemo"; \
 	echo "  make build-app     - generate Xcode project and build AutomixMac app"; \
 	echo "  make run-app       - build and launch AutomixMac app"; \
-	echo "  make run app       - alias of make run-app"; \
+	echo "  make run           - alias of make run-app"; \
+	echo "  make app           - alias of make run-app"; \
 	echo "  make test          - run C++ tests (ctest)"; \
 	echo "  make clean         - clean cmake/.build/app derived data"; \
 	echo "  make release VERSION=X.Y.Z [RELEASE_ARGS='--no-push -y']"
@@ -42,7 +43,7 @@ cmake-configure: ; cmake -S . -B cmake-build \
 build-lib: cmake-configure
 	@cmake --build cmake-build -j"$(JOBS)"
 
-build-demo: ; swift build --target AutomixDemo
+build-demo: build-lib ; swift build --target AutomixDemo
 
 build: build-lib build-demo
 

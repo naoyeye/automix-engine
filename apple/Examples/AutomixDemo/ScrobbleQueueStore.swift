@@ -49,28 +49,10 @@ actor ScrobbleQueueStore {
 
     static func defaultFileURL() -> URL {
         let fileManager = FileManager.default
-        if let automixDir = appSupportSubdirectory("AutomixDemo") {
+        if let automixDir = fileManager.appSupportSubdirectory("AutomixDemo") {
             return automixDir.appendingPathComponent("lastfm_scrobble_queue.json")
         }
         return fileManager.temporaryDirectory.appendingPathComponent("lastfm_scrobble_queue.json")
-    }
-
-    private static func appSupportSubdirectory(_ name: String) -> URL? {
-        let fileManager = FileManager.default
-        do {
-            let appSupport = try fileManager.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            )
-            let dir = appSupport.appendingPathComponent(name, isDirectory: true)
-            try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-            return dir
-        } catch {
-            print("[ScrobbleQueueStore] resolve app support subdirectory failed (\(name)): \(error.localizedDescription)")
-            return nil
-        }
     }
 
     private func load() -> [PendingScrobbleEvent] {

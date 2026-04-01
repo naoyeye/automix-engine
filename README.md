@@ -103,7 +103,8 @@ cmake --build .
 | `make build` | 主引擎 + Demo（SwiftPM） | 构建 `libautomix` + SwiftPM `AutomixDemo` |
 | `make build-app` | macOS App | 生成并构建 `AutomixMac` Xcode App |
 | `make run-app` | macOS App | 构建并启动 `AutomixMac.app` |
-| `make run app` | macOS App | 等价于 `make run-app` |
+| `make run` | macOS App | 等价于 `make run-app` |
+| `make app` | macOS App | 等价于 `make run-app` |
 | `make test` | 主引擎 | 运行 C++ 测试（ctest） |
 | `make clean` | 全项目 | 清理 `cmake-build`、`.build` 和 App DerivedData |
 | `make clean-all` | 全项目（偏 App） | 在 `make clean` 基础上额外删除生成的 `AutomixMac.xcodeproj` |
