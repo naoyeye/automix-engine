@@ -70,6 +70,7 @@ _deps/
 .cproject
 .settings/
 apple/Apps/AutomixMac/.derivedData/
+apple/Apps/AutomixMac/build/
 
 # macOS
 .DS_Store

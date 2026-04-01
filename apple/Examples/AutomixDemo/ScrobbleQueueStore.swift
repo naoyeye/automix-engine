@@ -49,9 +49,7 @@ actor ScrobbleQueueStore {
 
     static func defaultFileURL() -> URL {
         let fileManager = FileManager.default
-        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            let automixDir = appSupport.appendingPathComponent("AutomixDemo", isDirectory: true)
-            try? fileManager.createDirectory(at: automixDir, withIntermediateDirectories: true)
+        if let automixDir = fileManager.appSupportSubdirectory("AutomixDemo") {
             return automixDir.appendingPathComponent("lastfm_scrobble_queue.json")
         }
         return fileManager.temporaryDirectory.appendingPathComponent("lastfm_scrobble_queue.json")

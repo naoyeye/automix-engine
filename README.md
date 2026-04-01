@@ -41,6 +41,9 @@ brew install rubberband
 
 # 可选: 声纹识别（用于缺失元数据补全）
 brew install chromaprint
+
+# Essentia 构建依赖（源码编译时需要）
+brew install pkg-config eigen python
 ```
 
 ### Essentia（必需，完整音频分析）
@@ -81,12 +84,52 @@ conda install -c conda-forge essentia
 
 ```bash
 mkdir cmake-build && cd cmake-build
-cmake ..
-# 如果遇到架构不兼容问题 (Apple Silicon)，尝试:
-# cmake -DCMAKE_OSX_ARCHITECTURES=x86_64 ..
+cmake -DCMAKE_OSX_ARCHITECTURES=arm64 \
+      -DENABLE_ESSENTIA=ON \
+      -DPKG_CONFIG_EXECUTABLE=/opt/homebrew/bin/pkg-config ..
 
 cmake --build .
 ```
+
+### 一键快捷命令（推荐）
+
+项目根目录提供 `Makefile`，可统一常用开发命令：
+
+| 命令 | 作用范围 | 说明 |
+| --- | --- | --- |
+| `make help` | 全项目 | 查看所有命令 |
+| `make doctor` | 主引擎（环境诊断） | 检查架构 / pkg-config / essentia / libautomix |
+| `make dev` | 主引擎 | 收敛到 arm64 工具链并重建 `libautomix`（Essentia 必需） |
+| `make build` | 主引擎 + Demo（SwiftPM） | 构建 `libautomix` + SwiftPM `AutomixDemo` |
+| `make build-app` | macOS App | 生成并构建 `AutomixMac` Xcode App |
+| `make run-app` | macOS App | 构建并启动 `AutomixMac.app` |
+| `make run` | macOS App | 等价于 `make run-app` |
+| `make app` | macOS App | 等价于 `make run-app` |
+| `make test` | 主引擎 | 运行 C++ 测试（ctest） |
+| `make clean` | 全项目 | 清理 `cmake-build`、`.build` 和 App DerivedData |
+| `make clean-all` | 全项目（偏 App） | 在 `make clean` 基础上额外删除生成的 `AutomixMac.xcodeproj` |
+| `make release VERSION=1.2.3` | 全项目（发布流程） | 调用 `scripts/release.sh` |
+
+`release` 可附加参数示例：
+
+```bash
+make release VERSION=1.2.3 RELEASE_ARGS='--no-push -y'
+```
+
+### Apple Silicon 构建必检项（Essentia 必需）
+
+```bash
+uname -m
+which pkg-config
+pkg-config --variable=libdir essentia
+lipo -info /opt/homebrew/lib/libessentia.a
+```
+
+预期结果：
+- `uname -m` 为 `arm64`
+- `pkg-config` 来自 `/opt/homebrew/bin/pkg-config`
+- `essentia` libdir 指向 `/opt/homebrew/lib`
+- `libessentia.a` 架构为 `arm64`
 
 ## 使用
 
@@ -210,14 +253,16 @@ automix_destroy(engine);
 mkdir -p cmake-build && cd cmake-build
 
 cmake ..
-## 或者指定架构：
-cmake -DCMAKE_OSX_ARCHITECTURES=x86_64 ..
+## 推荐在 Apple Silicon 上显式指定 arm64：
+cmake -DCMAKE_OSX_ARCHITECTURES=arm64 \
+      -DENABLE_ESSENTIA=ON \
+      -DPKG_CONFIG_EXECUTABLE=/opt/homebrew/bin/pkg-config ..
 
 cmake --build .
 
 # 2. 返回项目根目录，使用 Swift Package Manager 运行 Demo
 cd ..
-swift test --arch x86_64 && swift build --target AutomixDemo && swift run AutomixDemo
+swift test && swift build --target AutomixDemo && swift run AutomixDemo
 ```
 
 **功能说明**：

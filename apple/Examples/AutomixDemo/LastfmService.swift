@@ -273,6 +273,12 @@ enum LastfmService {
 
     private static func redactedBodyLogString(from params: [String: String]) -> String {
         var output = params
+        if let apiKey = output["api_key"] {
+            output["api_key"] = maskSecret(apiKey)
+        }
+        if let token = output["token"] {
+            output["token"] = maskSecret(token)
+        }
         if let sk = output["sk"] {
             output["sk"] = maskSecret(sk)
         }

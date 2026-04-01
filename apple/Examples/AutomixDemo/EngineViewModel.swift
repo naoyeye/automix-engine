@@ -115,11 +115,9 @@ class EngineViewModel: ObservableObject {
             return envDb
         }
         let fileManager = FileManager.default
-        guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+        guard let automixDir = fileManager.appSupportSubdirectory("Automix") else {
             return fileManager.temporaryDirectory.appendingPathComponent("automix.db").path
         }
-        let automixDir = appSupport.appendingPathComponent("Automix", isDirectory: true)
-        try? fileManager.createDirectory(at: automixDir, withIntermediateDirectories: true)
         return automixDir.appendingPathComponent("automix.db").path
     }
 
@@ -138,8 +136,7 @@ class EngineViewModel: ObservableObject {
                 return (envPath, "环境变量 AUTOMIX_KEYS_PATH")
             }
         }
-        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            let automixDir = appSupport.appendingPathComponent("AutomixDemo", isDirectory: true)
+        if let automixDir = fileManager.appSupportSubdirectory("AutomixDemo") {
             let path = automixDir.appendingPathComponent("keys.json").path
             if fileManager.fileExists(atPath: path) { return (path, "Application Support") }
         }
